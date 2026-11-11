@@ -14,7 +14,7 @@ shows what is already on disk.
 | Lists the default folder on start | `GALLERY_ROOT` (default `./media`), server-rendered first paint |
 | Add a folder by browsing **or** by typing a path | Library panel → **Add folder** (two tabs) |
 | Listing shows only folders and images, folders first | `GET /api/listing` |
-| Grid ⇄ list toggle, order by name or date, asc/desc | Toolbar; choices remembered in `localStorage` |
+| Grid ⇄ list toggle, order by name or date, asc/desc | Toolbar; choices saved in a cookie and applied by the server on the first paint |
 | Small thumbnails | `GET /api/thumb` — sharp → WebP, cached on disk |
 | Click a thumbnail → carousel, slide between images in the folder | `Lightbox` (touch swipe, mouse drag, ← →, Home/End, Esc) |
 | Zoom a picture | pinch, double-tap, `+`/`-`/`0`, ctrl+wheel; drag to pan while zoomed |
@@ -156,6 +156,14 @@ they are **not** a capability or a secret.
   re-checks containment right before `fs.rm(recursive)`, and prunes library rows
   that pointed inside the removed tree. A read-only mount or a permission error
   comes back as `403`, not a `500`.
+* **Preferences** (`src/lib/prefs.ts`) — layout and ordering live in the
+  `gallery.prefs` cookie, not localStorage, because the first paint is rendered
+  server side: the page has to emit the entries in the order you chose. Applying
+  a stored `sort`/`view` after mount re-ordered the grid and swapped grid→list
+  markup, which measured **CLS 0.52** (largest single shift 0.25, “poor” by
+  Google's threshold); reading the cookie in `page.tsx` and skipping the now
+  redundant startup fetch brings it to **CLS 0**. A stale or hand-edited cookie
+  falls back to the defaults field by field.
 * **Sorting** — `Intl.Collator({numeric:true})`, so `IMG_2.jpg` sorts before
   `IMG_10.jpg`; date mode falls back to the name for identical timestamps.
 * Hidden entries (`.`, `~$`, `@eaDir`, `.DS_Store`, `Thumbs.db`, …) and non-image

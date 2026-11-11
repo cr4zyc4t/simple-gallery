@@ -1,7 +1,9 @@
 import { GALLERY_ROOT, READ_ONLY } from "@/lib/config";
+import { cookies } from "next/headers";
 import { ensureRootExists, folderInfo, listGalleryDir } from "@/lib/fs/gallery";
 import { ensureDefaultFolder, listFolders } from "@/lib/db";
 import { toLibraryFolder } from "@/lib/library";
+import { DEFAULT_PREFS, PREFS_COOKIE, decodePrefs } from "@/lib/prefs";
 import Gallery from "@/components/Gallery";
 import type { GalleryEntry, ListingResponse } from "@/lib/types";
 
@@ -14,11 +16,20 @@ export const metadata = { title: "Simple Gallery" };
  * server so the grid is visible before any client fetch.
  */
 export default async function HomePage() {
+  // The ordering lives in a cookie precisely so that this first paint already
+  // uses it — otherwise the grid would be re-rendered in another order.
+  const prefs = await cookies()
+    .then((store) => decodePrefs(store.get(PREFS_COOKIE)?.value))
+    .catch(() => DEFAULT_PREFS);
+
   let initial: ListingResponse;
   try {
     ensureRootExists();
     ensureDefaultFolder();
-    const entries: GalleryEntry[] = await listGalleryDir(GALLERY_ROOT, { key: "name", dir: "asc" });
+    const entries: GalleryEntry[] = await listGalleryDir(GALLERY_ROOT, {
+      key: prefs.sort,
+      dir: prefs.dir,
+    });
     const folder = folderInfo(GALLERY_ROOT, true);
     initial = {
       folder,
@@ -56,5 +67,5 @@ export default async function HomePage() {
     }
   })();
 
-  return <Gallery initialListing={initial} initialLibrary={library} />;
+  return <Gallery initialListing={initial} initialLibrary={library} initialPrefs={prefs} />;
 }

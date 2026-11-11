@@ -17,23 +17,14 @@ import {
   SpinnerIcon,
   TrashIcon,
 } from "./icons";
-import {
-  deleteEntries,
-  deleteEntry,
-  fetchEntryStats,
-  fetchLibrary,
-  fetchListing,
-  removeLibraryFolder,
-} from "@/lib/client";
-import { usePersistentState } from "@/lib/use-persistent-state";
+import { deleteEntries, deleteEntry, fetchEntryStats, fetchLibrary, fetchListing, removeLibraryFolder } from "@/lib/client";
+import { DEFAULT_PREFS, type Prefs } from "@/lib/prefs";
+import { usePrefs } from "@/lib/use-prefs";
 import type {
   FolderInfo,
   GalleryEntry,
   LibraryFolder,
   ListingResponse,
-  SortDir,
-  SortKey,
-  ViewMode,
 } from "@/lib/types";
 
 type Pending =
@@ -50,9 +41,15 @@ interface SelectionModifiers {
 interface GalleryProps {
   initialListing: ListingResponse;
   initialLibrary: LibraryFolder[];
+  /** Ordering/layout the server already rendered with. */
+  initialPrefs?: Prefs;
 }
 
-export default function Gallery({ initialListing, initialLibrary }: GalleryProps) {
+export default function Gallery({
+  initialListing,
+  initialLibrary,
+  initialPrefs = DEFAULT_PREFS,
+}: GalleryProps) {
   const [listing, setListing] = useState<ListingResponse>(initialListing);
   const [library, setLibrary] = useState<LibraryFolder[]>(initialLibrary);
   const [token, setToken] = useState<string | null>(initialListing.folder.token || null);
@@ -61,9 +58,9 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "ok" | "error" } | null>(null);
 
-  const [view, setView] = usePersistentState<ViewMode>("gallery.view", "grid");
-  const [sort, setSort] = usePersistentState<SortKey>("gallery.sort", "name");
-  const [dir, setDir] = usePersistentState<SortDir>("gallery.dir", "asc");
+  // Seeded from the cookie, so the server HTML and this render agree.
+  const [prefs, setPrefs] = usePrefs(initialPrefs);
+  const { view, sort, dir } = prefs;
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [pending, setPending] = useState<Pending>(null);
@@ -111,8 +108,22 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
   }, [notify]);
 
   // Listing is re-fetched when the folder or the ordering changes (the server
-  // owns collation so both views stay consistent).
+  // owns collation so both views stay consistent). The very first fetch is
+  // skipped when the server already rendered exactly this listing.
+  const served = useRef({
+    token: initialListing.folder.token || null,
+    sort: initialPrefs.sort,
+    dir: initialPrefs.dir,
+  });
+  const skipFirstFetch = useRef(true);
+
   useEffect(() => {
+    if (skipFirstFetch.current) {
+      skipFirstFetch.current = false;
+      if (token === served.current.token && sort === served.current.sort && dir === served.current.dir) {
+        return;
+      }
+    }
     let cancelled = false;
     const id = ++requestId.current;
     setLoading(true);
@@ -500,9 +511,9 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
             loading={loading}
             canSelect={!readOnly && listing.entries.length > 0}
             selectMode={selectMode}
-            onViewChange={setView}
-            onSortChange={setSort}
-            onDirChange={setDir}
+            onViewChange={(next) => setPrefs({ view: next })}
+            onSortChange={(next) => setPrefs({ sort: next })}
+            onDirChange={(next) => setPrefs({ dir: next })}
             onUp={() => goTo(folder.parentToken)}
             onToggleSelectMode={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
           />
