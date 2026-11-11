@@ -46,106 +46,113 @@ export default function GalleryToolbar({
     sort === "name" ? (dir === "asc" ? "A → Z" : "Z → A") : dir === "asc" ? "Oldest first" : "Newest first";
 
   return (
-    <section
-      aria-label="Listing controls"
-      className="flex flex-wrap items-center gap-2 rounded-2xl border border-line/50 bg-surface/70 p-2"
-    >
-      <button
-        type="button"
-        onClick={onUp}
-        disabled={!folder.parentToken}
-        aria-label="Go up one level"
-        title="Up one level"
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line/70 text-ink-muted transition hover:bg-surface-raised hover:text-ink disabled:opacity-30"
-      >
-        <ChevronUpIcon width={18} height={18} />
-      </button>
-
-      <div className="order-2 min-w-0 flex-1 sm:order-none">
-        <p className="truncate text-sm font-semibold" title={folder.name}>
+    <>
+      {/* Where you are and what is in it — this part scrolls away. */}
+      <div className="flex items-baseline gap-3 px-1 pb-2">
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold" title={folder.name}>
           {folder.name}
         </p>
-        <p className="truncate text-xs text-ink-muted">
+        <p className="shrink-0 text-xs text-ink-muted">
           {counts.folders} folder{counts.folders === 1 ? "" : "s"} · {counts.images} image
           {counts.images === 1 ? "" : "s"}
           {loading ? " · refreshing" : ""}
         </p>
       </div>
 
-      <div className="order-3 flex basis-full items-center justify-between gap-2 sm:order-none sm:basis-auto sm:justify-start">
-        <label className="sr-only" htmlFor="sort-by">
-          Order by
-        </label>
-        <select
-          id="sort-by"
-          value={sort}
-          onChange={(event) => onSortChange(event.target.value as SortKey)}
-          className="h-10 rounded-xl border border-line/70 bg-surface px-2.5 text-sm text-ink outline-none transition hover:bg-surface-raised focus:border-accent"
-        >
-          <option value="name">Name</option>
-          <option value="date">Date</option>
-        </select>
-
-        <button
-          type="button"
-          onClick={() => onDirChange(dir === "asc" ? "desc" : "asc")}
-          aria-label={`Order direction: ${dirLabel}`}
-          title={dirLabel}
-          className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-line/70 px-2.5 text-sm text-ink-muted transition hover:bg-surface-raised hover:text-ink"
-        >
-          {dir === "asc" ? <SortAscIcon width={18} height={18} /> : <SortDescIcon width={18} height={18} />}
-          <span className="hidden sm:inline">{dirLabel}</span>
-        </button>
-
-        <div
-          role="group"
-          aria-label="Layout"
-          className="flex items-center gap-0.5 rounded-xl border border-line/70 p-0.5"
-        >
+      {/* Controls stay reachable while the listing scrolls. The strip is painted in
+          the solid page background, so tiles are clipped as they pass under it
+          rather than showing through, and it pins just below the app header
+          (--header-h, kept exact by a ResizeObserver in Gallery). */}
+      <section
+        aria-label="Listing controls"
+        className="sticky top-[calc(var(--header-h,91px)-1px)] z-20 -mx-3 bg-surface-sunken px-3 pb-2 pt-1 sm:-mx-4 sm:px-4"
+      >
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-line/50 bg-surface p-2">
           <button
             type="button"
-            onClick={() => onViewChange("grid")}
-            aria-pressed={view === "grid"}
-            aria-label="Grid view"
-            title="Grid view"
-            className={`grid h-9 w-9 place-items-center rounded-lg transition ${
-              view === "grid" ? "bg-accent-strong text-white" : "text-ink-muted hover:text-ink"
-            }`}
+            onClick={onUp}
+            disabled={!folder.parentToken}
+            aria-label="Go up one level"
+            title="Up one level"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line/70 text-ink-muted transition hover:bg-surface-raised hover:text-ink disabled:opacity-30"
           >
-            <GridIcon width={18} height={18} />
+            <ChevronUpIcon width={18} height={18} />
           </button>
+
+          <label className="sr-only" htmlFor="sort-by">
+            Order by
+          </label>
+          <select
+            id="sort-by"
+            value={sort}
+            onChange={(event) => onSortChange(event.target.value as SortKey)}
+            className="h-10 rounded-xl border border-line/70 bg-surface px-2.5 text-sm text-ink outline-none transition hover:bg-surface-raised focus:border-accent"
+          >
+            <option value="name">Name</option>
+            <option value="date">Date</option>
+          </select>
+
           <button
             type="button"
-            onClick={() => onViewChange("list")}
-            aria-pressed={view === "list"}
-            aria-label="List view"
-            title="List view"
-            className={`grid h-9 w-9 place-items-center rounded-lg transition ${
-              view === "list" ? "bg-accent-strong text-white" : "text-ink-muted hover:text-ink"
-            }`}
+            onClick={() => onDirChange(dir === "asc" ? "desc" : "asc")}
+            aria-label={`Order direction: ${dirLabel}`}
+            title={dirLabel}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-line/70 px-2.5 text-sm text-ink-muted transition hover:bg-surface-raised hover:text-ink"
           >
-            <ListIcon width={18} height={18} />
+            {dir === "asc" ? <SortAscIcon width={18} height={18} /> : <SortDescIcon width={18} height={18} />}
+            <span className="hidden sm:inline">{dirLabel}</span>
           </button>
+
+          <div
+            role="group"
+            aria-label="Layout"
+            className="flex items-center gap-0.5 rounded-xl border border-line/70 p-0.5 sm:ml-auto"
+          >
+            <button
+              type="button"
+              onClick={() => onViewChange("grid")}
+              aria-pressed={view === "grid"}
+              aria-label="Grid view"
+              title="Grid view"
+              className={`grid h-9 w-9 place-items-center rounded-lg transition ${
+                view === "grid" ? "bg-accent-strong text-white" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              <GridIcon width={18} height={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewChange("list")}
+              aria-pressed={view === "list"}
+              aria-label="List view"
+              title="List view"
+              className={`grid h-9 w-9 place-items-center rounded-lg transition ${
+                view === "list" ? "bg-accent-strong text-white" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              <ListIcon width={18} height={18} />
+            </button>
+          </div>
+
+          {canSelect ? (
+            <button
+              type="button"
+              onClick={onToggleSelectMode}
+              aria-pressed={selectMode}
+              aria-label={selectMode ? "Exit selection" : "Select multiple items"}
+              title={selectMode ? "Exit selection (Esc)" : "Select multiple items"}
+              className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-2.5 text-sm transition ${
+                selectMode
+                  ? "border-accent bg-accent-strong text-white"
+                  : "border-line/70 text-ink-muted hover:bg-surface-raised hover:text-ink"
+              }`}
+            >
+              <CheckSquareIcon width={18} height={18} />
+              <span className="hidden sm:inline">{selectMode ? "Done" : "Select"}</span>
+            </button>
+          ) : null}
         </div>
-
-        {canSelect ? (
-          <button
-            type="button"
-            onClick={onToggleSelectMode}
-            aria-pressed={selectMode}
-            aria-label={selectMode ? "Exit selection" : "Select multiple items"}
-            title={selectMode ? "Exit selection (Esc)" : "Select multiple items"}
-            className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-2.5 text-sm transition ${
-              selectMode
-                ? "border-accent bg-accent-strong text-white"
-                : "border-line/70 text-ink-muted hover:bg-surface-raised hover:text-ink"
-            }`}
-          >
-            <CheckSquareIcon width={18} height={18} />
-            <span className="hidden sm:inline">{selectMode ? "Done" : "Select"}</span>
-          </button>
-        ) : null}
-      </div>
-    </section>
+      </section>
+    </>
   );
 }

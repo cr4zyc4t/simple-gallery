@@ -18,7 +18,7 @@ import {
   TrashIcon,
 } from "./icons";
 import { deleteEntries, deleteEntry, fetchEntryStats, fetchLibrary, fetchListing, removeLibraryFolder } from "@/lib/client";
-import { DEFAULT_PREFS, type Prefs } from "@/lib/prefs";
+import { HEADER_HEIGHT_VAR, DEFAULT_PREFS, type Prefs } from "@/lib/prefs";
 import { usePrefs } from "@/lib/use-prefs";
 import type {
   FolderInfo,
@@ -116,6 +116,24 @@ export default function Gallery({
     dir: initialPrefs.dir,
   });
   const skipFirstFetch = useRef(true);
+
+  // The control bar and the library panel pin themselves just below the app
+  // header; publishing its real height keeps that offset correct when the header
+  // wraps, changes font size or is zoomed.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header || typeof ResizeObserver === "undefined") return;
+    const sync = () =>
+      document.documentElement.style.setProperty(
+        HEADER_HEIGHT_VAR,
+        `${Math.ceil(header.getBoundingClientRect().height)}px`,
+      );
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (skipFirstFetch.current) {
@@ -427,7 +445,10 @@ export default function Gallery({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-30 border-b border-line/60 bg-surface-sunken/95 backdrop-blur">
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-30 border-b border-line/60 bg-surface-sunken/95 backdrop-blur"
+      >
         <div className="mx-auto flex w-full max-w-[1800px] items-center gap-2 px-3 py-2 sm:px-4 sm:py-3">
           <button
             type="button"
@@ -496,7 +517,7 @@ export default function Gallery({
 
       <div className="mx-auto flex w-full max-w-[1800px] flex-1 gap-4 px-3 py-3 sm:px-4 sm:py-4">
         <aside className="hidden w-64 shrink-0 lg:block xl:w-72">
-          <div className="sticky top-[104px] max-h-[calc(100dvh-124px)] overflow-hidden rounded-2xl border border-line/60 bg-surface p-3">
+          <div className="sticky top-[calc(var(--header-h,91px)+12px)] max-h-[calc(100dvh-var(--header-h,91px)-28px)] overflow-hidden rounded-2xl border border-line/60 bg-surface p-3">
             {libraryPanel}
           </div>
         </aside>

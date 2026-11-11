@@ -23,6 +23,7 @@ shows what is already on disk.
 | Delete a folder, confirm only when it is not empty | empty folders go straight away, non-empty ones ask first |
 | Delete many items at once | toolbar **Select** → tap / hold / Shift+click → **Delete** (`DELETE /api/entry` with `paths[]`) |
 | Responsive on desktop / tablet / mobile | sidebar on ≥1024px, drawer below; 2→8 column grid |
+| Controls stay reachable while scrolling | the control bar is sticky; the folder name and counts scroll away |
 | Deploy with Docker | multi-stage `Dockerfile` + `docker-compose.yml` |
 | Database | Drizzle ORM + better-sqlite3, table `folders` (the user's library list) |
 
@@ -164,6 +165,15 @@ they are **not** a capability or a secret.
   Google's threshold); reading the cookie in `page.tsx` and skipping the now
   redundant startup fetch brings it to **CLS 0**. A stale or hand-edited cookie
   falls back to the defaults field by field.
+* **Sticky chrome** (`GalleryToolbar`) — the app header (title + breadcrumb) is
+  sticky, and the control bar — up, order by, direction, layout, select — is
+  sticky right below it, so sorting or switching view deep in a long folder needs
+  no scroll back. The folder name and counts sit above it and scroll away with
+  the page. The offset comes from a `--header-h` custom property that `Gallery`
+  publishes from the header's real height with a `ResizeObserver`, so the bar
+  cannot overlap or float even when the header wraps or the page is zoomed; the
+  strip behind the bar is painted in the solid page colour, so tiles are clipped
+  as they pass under it.
 * **Sorting** — `Intl.Collator({numeric:true})`, so `IMG_2.jpg` sorts before
   `IMG_10.jpg`; date mode falls back to the name for identical timestamps.
 * Hidden entries (`.`, `~$`, `@eaDir`, `.DS_Store`, `Thumbs.db`, …) and non-image
