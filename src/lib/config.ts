@@ -14,7 +14,9 @@ function splitList(value: string | undefined): string[] {
 }
 
 function resolveEnv(p: string): string {
-  return path.resolve(process.cwd(), p);
+  // The ignore comment stops Turbopack from treating process.cwd() as a real
+  // path and shipping the whole source tree inside the standalone output.
+  return path.resolve(/* turbopackIgnore: true */ process.cwd(), p);
 }
 
 /** Directory shown when the app starts ("default folder"). */

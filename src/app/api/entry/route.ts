@@ -51,52 +51,124 @@ export async function GET(request: Request) {
 }
 
 interface DeleteBody {
+  /** Single item (kept for simple callers). */
   path?: string;
+  /** Batch mode: every item is attempted, each outcome is reported. */
+  paths?: string[];
   kind?: EntryKind;
 }
 
+interface DeleteItemResult {
+  token: string;
+  ok: boolean;
+  kind?: EntryKind;
+  /** The item lived inside another selected folder and went with it. */
+  removedWithParent?: boolean;
+  removedLibraryEntries?: number;
+  error?: string;
+  status?: number;
+}
+
+const MAX_BATCH = 500;
+
 /**
- * Delete a picture, or a folder with its contents.
- * The UI always asks for confirmation on a non-empty folder; the server keeps
- * its own guard rails (allowed roots, never the gallery root).
+ * Delete pictures and folders (with their contents), one at a time or in bulk.
+ * The UI always asks for confirmation; the server keeps its own guard rails
+ * (allowed roots, never the gallery root) and applies them per item.
  */
 export async function DELETE(request: Request) {
   try {
     assertWritable();
     const body = await readJsonBody<DeleteBody>(request);
-    const target = resolveTokenLoose(body.path);
-    let stats: fs.Stats;
-    try {
-      stats = fs.statSync(target);
-    } catch {
-      throw new PathError("Item no longer exists", 404);
+    const tokens = Array.isArray(body.paths)
+      ? body.paths.filter((token): token is string => typeof token === "string" && token.length > 0)
+      : typeof body.path === "string" && body.path.length > 0
+        ? [body.path]
+        : [];
+    if (tokens.length === 0) throw new PathError("Missing path token");
+    if (tokens.length > MAX_BATCH) {
+      throw new PathError(`Too many items at once (${MAX_BATCH} maximum)`, 413);
     }
 
-    if (stats.isDirectory()) {
-      if (body.kind && body.kind !== "folder") {
-        throw new PathError("Path is a folder, not an image", 400);
+    // Resolve and validate every token before touching the disk, so a token
+    // pointing outside the allowed roots rejects the whole request.
+    const resolved = tokens.map((token) => [resolveTokenLoose(token), token] as const);
+    const unique = new Map<string, string>(resolved);
+
+    // Shortest path first: a selected folder is removed before its own
+    // children, which are then reported as removed with it instead of failing.
+    const ordered = [...unique.entries()].sort((a, b) => a[0].length - b[0].length);
+    const removedDirs: string[] = [];
+    const results: DeleteItemResult[] = [];
+
+    for (const [target, token] of ordered) {
+      if (removedDirs.some((dir) => target.startsWith(`${dir}${path.sep}`))) {
+        results.push({ token, ok: true, removedWithParent: true });
+        continue;
       }
       try {
-        await deleteFolderTree(target);
-      } catch (deleteError) {
-        throw fileSystemError(deleteError);
+        const stats = fs.statSync(target);
+        if (stats.isDirectory()) {
+          if (body.kind && body.kind !== "folder") {
+            throw new PathError("Path is a folder, not an image", 400);
+          }
+          try {
+            await deleteFolderTree(target);
+          } catch (deleteError) {
+            throw fileSystemError(deleteError);
+          }
+          const removedLibraryRows = removeFoldersUnder(target);
+          purgeCacheFor(target);
+          removedDirs.push(target);
+          results.push({ token, ok: true, kind: "folder", removedLibraryEntries: removedLibraryRows });
+        } else {
+          if (body.kind && body.kind !== "image") throw new PathError("Path is an image", 400);
+          try {
+            await deleteImageFile(target);
+          } catch (deleteError) {
+            throw fileSystemError(deleteError);
+          }
+          purgeCacheFor(target);
+          results.push({ token, ok: true, kind: "image" });
+        }
+      } catch (itemError) {
+        const mapped = fileSystemError(itemError);
+        results.push({
+          token,
+          ok: false,
+          error: mapped instanceof Error ? mapped.message : "Delete failed",
+          status: mapped instanceof PathError ? mapped.status : 500,
+        });
       }
-      const removedLibraryRows = removeFoldersUnder(target);
-      purgeCacheFor(target);
+    }
+
+    const deletedCount = results.filter((item) => item.ok).length;
+    const failedCount = results.length - deletedCount;
+    const removedLibraryEntries = results.reduce((sum, item) => sum + (item.removedLibraryEntries ?? 0), 0);
+
+    // Nothing succeeded: surface the first reason as a normal error response.
+    if (deletedCount === 0) {
+      const first = results.find((item) => !item.ok) ?? { error: "Item no longer exists", status: 404 };
       return NextResponse.json(
-        { deleted: true, kind: "folder", removedLibraryEntries: removedLibraryRows },
-        { headers: noStoreHeaders() },
+        { error: first.error ?? "Delete failed", results },
+        { status: first.status ?? 500, headers: noStoreHeaders() },
       );
     }
 
-    if (body.kind && body.kind !== "image") throw new PathError("Path is an image", 400);
-    try {
-      await deleteImageFile(target);
-    } catch (deleteError) {
-      throw fileSystemError(deleteError);
-    }
-    purgeCacheFor(target);
-    return NextResponse.json({ deleted: true, kind: "image" }, { headers: noStoreHeaders() });
+    const only = results.length === 1 ? results[0] : null;
+    return NextResponse.json(
+      {
+        deleted: true,
+        kind: only?.kind ?? "batch",
+        batch: results.length > 1,
+        requested: results.length,
+        deletedCount,
+        failedCount,
+        removedLibraryEntries,
+        results,
+      },
+      { headers: noStoreHeaders() },
+    );
   } catch (error) {
     return errorResponse(error);
   }
@@ -106,6 +178,7 @@ export async function DELETE(request: Request) {
 function fileSystemError(error: unknown): unknown {
   if (error instanceof PathError) return error;
   const code = (error as NodeJS.ErrnoException).code;
+  if (error instanceof TypeError) return new PathError("Invalid path", 400);
   if (code === "EROFS") return new PathError("The volume is mounted read-only", 403);
   if (code === "EACCES" || code === "EPERM") {
     return new PathError("Permission denied by the server process", 403);

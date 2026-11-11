@@ -17,9 +17,11 @@ shows what is already on disk.
 | Grid ⇄ list toggle, order by name or date, asc/desc | Toolbar; choices remembered in `localStorage` |
 | Small thumbnails | `GET /api/thumb` — sharp → WebP, cached on disk |
 | Click a thumbnail → carousel, slide between images in the folder | `Lightbox` (touch swipe, mouse drag, ← →, Home/End, Esc) |
+| Zoom a picture | pinch, double-tap, `+`/`-`/`0`, ctrl+wheel; drag to pan while zoomed |
 | Download an image, never a folder | `GET /api/download` rejects directories |
 | Delete an image with confirmation | confirm dialog on every image delete |
 | Delete a folder, confirm only when it is not empty | empty folders go straight away, non-empty ones ask first |
+| Delete many items at once | toolbar **Select** → tap / hold / Shift+click → **Delete** (`DELETE /api/entry` with `paths[]`) |
 | Responsive on desktop / tablet / mobile | sidebar on ≥1024px, drawer below; 2→8 column grid |
 | Deploy with Docker | multi-stage `Dockerfile` + `docker-compose.yml` |
 | Database | Drizzle ORM + better-sqlite3, table `folders` (the user's library list) |
@@ -117,7 +119,7 @@ folders(id, name, path UNIQUE, parent_path, is_default, created_at)
 | `GET /api/browse?path=` | sub-folders for the browser dialog (no token → allowed roots) |
 | `GET/POST /api/library`, `DELETE /api/library/:id` | the saved folder list |
 | `GET /api/entry?path=` | metadata; tells whether a folder is empty |
-| `DELETE /api/entry` | `{path, kind}` — delete one image or a folder tree |
+| `DELETE /api/entry` | `{path, kind}` for one item, or `{paths: […]}` for up to 500 — every token is validated before anything is deleted, each outcome is reported in `results[]` |
 | `GET /api/thumb?path=&w=` | WebP thumbnail (128–1280 px), disk cached |
 | `GET /api/image?path=` | full image, `Range` + `ETag` support |
 | `GET /api/download?path=` | attachment download; folders are refused |
@@ -136,9 +138,24 @@ they are **not** a capability or a secret.
   detection; only the previous/current/next `<img>` are mounted, so a folder of
   500 photos stays light. Edge arrows are hidden below `sm` so they never eat a
   swipe; phones get arrows in the bottom bar instead.
+* **Zoom** — the zoom/pan transform is applied to the current `<img>` only, the
+  paging track is never scaled, so the two gestures cannot fight. Two pointers
+  pinch-zoom around the pinch midpoint (1×–5×, clamped to the picture's own
+  edges), one finger pans while zoomed, and paging is disabled until you are
+  back at 1×. The track is `touch-action: none`; the pointer is captured only
+  once a drag really starts, so taps still reach the picture for double-tap and
+  backdrop close. `0`, `+`, `-`, double-tap/double-click and ctrl+wheel all work.
+* **Multi-select** — selection lives in React state, never in the database, and
+  is dropped when you leave the folder. Tiles get a checkbox (`role="checkbox"`),
+  a 420 ms hold starts selecting on touch, Shift+click extends a range, and the
+  bottom bar offers All / Delete / Esc. Per-item delete buttons are hidden while
+  selecting so a batch is never mixed with a single delete. In a batch, parents
+  are deleted before their own children — a child that went with its folder is
+  reported as `removedWithParent` instead of failing with `ENOENT`.
 * **Deletes** — server refuses to delete `GALLERY_ROOT` or any allowed root,
   re-checks containment right before `fs.rm(recursive)`, and prunes library rows
-  that pointed inside the removed tree.
+  that pointed inside the removed tree. A read-only mount or a permission error
+  comes back as `403`, not a `500`.
 * **Sorting** — `Intl.Collator({numeric:true})`, so `IMG_2.jpg` sorts before
   `IMG_10.jpg`; date mode falls back to the name for identical timestamps.
 * Hidden entries (`.`, `~$`, `@eaDir`, `.DS_Store`, `Thumbs.db`, …) and non-image

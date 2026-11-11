@@ -1,4 +1,5 @@
 import type {
+  BatchDeleteResponse,
   BrowseResponse,
   GalleryEntry,
   LibraryFolder,
@@ -94,5 +95,13 @@ export function deleteEntry(token: string, kind: GalleryEntry["kind"]) {
   return api<{ deleted: boolean }>(endpoints.entryMutate(), {
     method: "DELETE",
     body: JSON.stringify({ path: token, kind }),
+  });
+}
+
+/** Delete several images and/or folders in one request. */
+export function deleteEntries(tokens: string[]) {
+  return api<BatchDeleteResponse>(endpoints.entryMutate(), {
+    method: "DELETE",
+    body: JSON.stringify({ paths: tokens }),
   });
 }

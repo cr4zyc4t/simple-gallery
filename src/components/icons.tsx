@@ -144,3 +144,23 @@ export const KeyboardIcon = (props: IconProps) => (
     <path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M6 13.5h12" />
   </Base>
 );
+
+export const CheckIcon = (props: IconProps) => (
+  <Base {...props}>
+    <path d="m5 12.5 4.4 4.4L19 7.3" />
+  </Base>
+);
+
+export const CheckSquareIcon = (props: IconProps) => (
+  <Base {...props}>
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3.5" />
+    <path d="m8 12.2 2.7 2.7L16.4 9" />
+  </Base>
+);
+
+export const ZoomOutIcon = (props: IconProps) => (
+  <Base {...props}>
+    <circle cx="10.5" cy="10.5" r="6.5" />
+    <path d="M15.4 15.4 21 21M7.8 10.5h5.4" />
+  </Base>
+);

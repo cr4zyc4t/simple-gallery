@@ -15,8 +15,10 @@ import {
   MenuIcon,
   RefreshIcon,
   SpinnerIcon,
+  TrashIcon,
 } from "./icons";
 import {
+  deleteEntries,
   deleteEntry,
   fetchEntryStats,
   fetchLibrary,
@@ -37,7 +39,13 @@ import type {
 type Pending =
   | { type: "image"; entry: GalleryEntry }
   | { type: "folder"; entry: GalleryEntry; folders: number; images: number; other: number }
+  | { type: "batch"; entries: GalleryEntry[]; folders: number; images: number }
   | null;
+
+interface SelectionModifiers {
+  shift: boolean;
+  meta: boolean;
+}
 
 interface GalleryProps {
   initialListing: ListingResponse;
@@ -63,6 +71,11 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
   const [deletingToken, setDeletingToken] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Multi-select lives in memory only — it is meaningless in another folder.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const selectionAnchor = useRef<number | null>(null);
 
   const readOnly = listing.readOnly;
   const requestId = useRef(0);
@@ -129,6 +142,66 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
     setToken(nextToken);
   }, []);
 
+  /** Leaving a folder always drops the selection. */
+  useEffect(() => {
+    setSelected([]);
+    setSelectMode(false);
+    selectionAnchor.current = null;
+  }, [token]);
+
+  const selectedEntries = useMemo(() => {
+    const chosen = new Set(selected);
+    return listing.entries.filter((entry) => chosen.has(entry.token));
+  }, [listing.entries, selected]);
+
+  const selectionCount = selectedEntries.length;
+  const selectedCounts = useMemo(
+    () => ({
+      folders: selectedEntries.filter((entry) => entry.kind === "folder").length,
+      images: selectedEntries.filter((entry) => entry.kind === "image").length,
+    }),
+    [selectedEntries],
+  );
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelected([]);
+    selectionAnchor.current = null;
+  }, []);
+
+  const toggleSelect = useCallback(
+    (entry: GalleryEntry, position: number, modifiers?: SelectionModifiers) => {
+      setSelectMode(true);
+      setSelected((current) => {
+        // Shift extends the previous pick, like a file manager.
+        const anchor = selectionAnchor.current;
+        if (modifiers?.shift && anchor !== null && position >= 0) {
+          const merged = new Set(current);
+          for (let index = Math.min(anchor, position); index <= Math.max(anchor, position); index += 1) {
+            const item = listing.entries[index];
+            if (item) merged.add(item.token);
+          }
+          return [...merged];
+        }
+        return current.includes(entry.token)
+          ? current.filter((token) => token !== entry.token)
+          : [...current, entry.token];
+      });
+      if (position >= 0) selectionAnchor.current = position;
+    },
+    [listing.entries],
+  );
+
+  const selectEverything = useCallback(() => {
+    setSelectMode(true);
+    setSelected(listing.entries.map((entry) => entry.token));
+  }, [listing.entries]);
+
+  const clearSelection = useCallback(() => {
+    setSelected([]);
+    selectionAnchor.current = null;
+  }, []);
+
   const refresh = useCallback(async () => {
     const data = await fetchListing(token, sort, dir).catch((requestError: unknown) => {
       setError(requestError instanceof Error ? requestError.message : "Could not refresh");
@@ -138,23 +211,28 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
     void loadLibrary();
   }, [dir, loadLibrary, sort, token]);
 
+  /** Drop deleted items from the listing without refetching. */
+  const removeLocalEntries = useCallback((tokens: Set<string>) => {
+    setListing((current) => {
+      const remaining = current.entries.filter((item) => !tokens.has(item.token));
+      return {
+        ...current,
+        entries: remaining,
+        counts: {
+          folders: remaining.filter((item) => item.kind === "folder").length,
+          images: remaining.filter((item) => item.kind === "image").length,
+        },
+      };
+    });
+  }, []);
+
   /** Delete through the API, then patch local state (no refetch needed). */
   const performDelete = useCallback(
     async (entry: GalleryEntry): Promise<boolean> => {
       setDeletingToken(entry.token);
       try {
         await deleteEntry(entry.token, entry.kind);
-        setListing((current) => {
-          const remaining = current.entries.filter((item) => item.token !== entry.token);
-          return {
-            ...current,
-            entries: remaining,
-            counts: {
-              folders: remaining.filter((item) => item.kind === "folder").length,
-              images: remaining.filter((item) => item.kind === "image").length,
-            },
-          };
-        });
+        removeLocalEntries(new Set([entry.token]));
         const walkedIntoDeleted =
           entry.kind === "folder" &&
           (listing.folder.trail.some((step) => step.token === entry.token) ||
@@ -169,7 +247,7 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
         setDeletingToken(null);
       }
     },
-    [goTo, listing.folder, loadLibrary, notify],
+    [goTo, listing.folder, loadLibrary, notify, removeLocalEntries],
   );
 
   /** Ask before deleting: images always, folders only when not empty. */
@@ -209,6 +287,33 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
 
   const confirmPending = useCallback(async () => {
     if (!pending) return;
+
+    if (pending.type === "batch") {
+      const tokens = pending.entries.map((entry) => entry.token);
+      setBusy(true);
+      try {
+        const result = await deleteEntries(tokens);
+        const failed = new Set(result.results.filter((item) => !item.ok).map((item) => item.token));
+        const removed = new Set(tokens.filter((token) => !failed.has(token)));
+        removeLocalEntries(removed);
+        setSelected((current) => current.filter((token) => !removed.has(token)));
+        void loadLibrary();
+        if (failed.size > 0) {
+          const reason = result.results.find((item) => !item.ok)?.error ?? "some items were protected";
+          notify(`Deleted ${result.deletedCount} of ${result.requested} — ${reason}`, "error");
+        } else {
+          notify(`Deleted ${result.deletedCount} item${result.deletedCount === 1 ? "" : "s"}`);
+          exitSelectMode();
+        }
+      } catch (requestError) {
+        notify(requestError instanceof Error ? requestError.message : "Delete failed", "error");
+      } finally {
+        setBusy(false);
+        setPending(null);
+      }
+      return;
+    }
+
     const entry = pending.entry;
     const wasPreviewing = previewIndex !== null && images[previewIndex]?.token === entry.token;
     const ok = await performDelete(entry);
@@ -223,7 +328,7 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
       });
     }
     notify(`Deleted “${entry.name}”`);
-  }, [images, notify, pending, performDelete, previewIndex]);
+  }, [exitSelectMode, images, loadLibrary, notify, pending, performDelete, previewIndex, removeLocalEntries]);
 
   const handleFolderAdded = useCallback(
     (folder: LibraryFolder, openFolder: boolean) => {
@@ -253,6 +358,42 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
     },
     [notify],
   );
+
+  const requestBatchDelete = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+    setPending({
+      type: "batch",
+      entries: selectedEntries,
+      folders: selectedCounts.folders,
+      images: selectedCounts.images,
+    });
+  }, [selectedCounts.folders, selectedCounts.images, selectedEntries]);
+
+  // Esc leaves selection mode, Delete confirms a batch (the lightbox has its own keys).
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (previewIndex !== null || pending || addOpen || drawerOpen) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        exitSelectMode();
+      } else if ((event.key === "Delete" || event.key === "Backspace") && selectionCount > 0) {
+        event.preventDefault();
+        requestBatchDelete();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    addOpen,
+    drawerOpen,
+    exitSelectMode,
+    pending,
+    previewIndex,
+    requestBatchDelete,
+    selectMode,
+    selectionCount,
+  ]);
 
   const folder: FolderInfo = listing.folder;
 
@@ -349,7 +490,7 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1">
+        <main className={`min-w-0 flex-1${selectMode ? " pb-24" : ""}`}>
           <GalleryToolbar
             folder={folder}
             counts={listing.counts}
@@ -357,10 +498,13 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
             sort={sort}
             dir={dir}
             loading={loading}
+            canSelect={!readOnly && listing.entries.length > 0}
+            selectMode={selectMode}
             onViewChange={setView}
             onSortChange={setSort}
             onDirChange={setDir}
             onUp={() => goTo(folder.parentToken)}
+            onToggleSelectMode={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
           />
 
           {error ? (
@@ -416,41 +560,43 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
               </div>
             ) : view === "grid" ? (
               <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
-                {listing.entries.map((entry) => (
+                {listing.entries.map((entry, position) => (
                   <EntryItem
                     key={entry.token}
                     entry={entry}
                     view="grid"
                     readOnly={readOnly}
                     busy={deletingToken === entry.token}
+                    selectable={selectMode && !readOnly}
+                    selected={selected.includes(entry.token)}
                     onOpenFolder={(item) => goTo(item.token)}
                     onPreview={(item) => {
-                      const position = images.findIndex(
-                        (image) => image.token === item.token,
-                      );
-                      if (position >= 0) setPreviewIndex(position);
+                      const index = images.findIndex((image) => image.token === item.token);
+                      if (index >= 0) setPreviewIndex(index);
                     }}
                     onRequestDelete={(item) => void requestDelete(item)}
+                    onToggleSelect={(item, modifiers) => toggleSelect(item, position, modifiers)}
                   />
                 ))}
               </ul>
             ) : (
               <ul className="divide-y divide-line/40 rounded-2xl border border-line/50 bg-surface/60 px-1 py-1">
-                {listing.entries.map((entry) => (
+                {listing.entries.map((entry, position) => (
                   <EntryItem
                     key={entry.token}
                     entry={entry}
                     view="list"
                     readOnly={readOnly}
                     busy={deletingToken === entry.token}
+                    selectable={selectMode && !readOnly}
+                    selected={selected.includes(entry.token)}
                     onOpenFolder={(item) => goTo(item.token)}
                     onPreview={(item) => {
-                      const position = images.findIndex(
-                        (image) => image.token === item.token,
-                      );
-                      if (position >= 0) setPreviewIndex(position);
+                      const index = images.findIndex((image) => image.token === item.token);
+                      if (index >= 0) setPreviewIndex(index);
                     }}
                     onRequestDelete={(item) => void requestDelete(item)}
+                    onToggleSelect={(item, modifiers) => toggleSelect(item, position, modifiers)}
                   />
                 ))}
               </ul>
@@ -458,7 +604,11 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
           </div>
 
           <p className="mt-4 px-1 pb-2 text-center text-xs text-ink-muted/70">
-            {readOnly ? "Read-only mode — deleting is disabled." : "Folders are listed first."}
+            {readOnly
+              ? "Read-only mode — deleting is disabled."
+              : selectMode
+                ? "Tap to select · hold to start selecting · Shift+click picks a range · Esc cancels."
+                : "Folders are listed first."}
           </p>
         </main>
       </div>
@@ -509,11 +659,31 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
         open={pending !== null}
         tone="danger"
         busy={busy}
-        title={pending?.type === "folder" ? "Delete this folder?" : "Delete this image?"}
-        confirmLabel={pending?.type === "folder" ? "Delete folder" : "Delete image"}
-        cancelLabel="Keep it"
+        title={
+          pending?.type === "batch"
+            ? `Delete ${pending.entries.length} item${pending.entries.length === 1 ? "" : "s"}?`
+            : pending?.type === "folder"
+              ? "Delete this folder?"
+              : "Delete this image?"
+        }
+        confirmLabel={pending?.type === "batch" ? "Delete selected" : pending?.type === "folder" ? "Delete folder" : "Delete image"}
+        cancelLabel={pending?.type === "batch" ? "Keep them" : "Keep it"}
         description={
-          pending?.type === "folder" ? (
+          pending?.type === "batch" ? (
+            <>
+              <p>
+                {pending.folders > 0 ? `${pending.folders} folder${pending.folders === 1 ? "" : "s"}` : ""}
+                {pending.folders > 0 && pending.images > 0 ? " and " : ""}
+                {pending.images > 0 ? `${pending.images} image${pending.images === 1 ? "" : "s"}` : ""}
+                {pending.folders === 0 && pending.images === 0 ? "The selected items" : ""} will be
+                permanently deleted from disk.
+              </p>
+              {pending.folders > 0 ? (
+                <p>Everything inside the selected folders goes with them.</p>
+              ) : null}
+              <p className="text-danger">This cannot be undone.</p>
+            </>
+          ) : pending?.type === "folder" ? (
             (() => {
               const parts = [
                 pending.folders > 0 ? `${pending.folders} folder${pending.folders === 1 ? "" : "s"}` : null,
@@ -546,14 +716,49 @@ export default function Gallery({ initialListing, initialLibrary }: GalleryProps
         onConfirm={() => void confirmPending()}
       />
 
+      {selectMode && !readOnly ? (
+        <div className="animate-pop-in fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="mx-auto flex w-fit max-w-full items-center gap-1 rounded-2xl border border-line/70 bg-surface-raised/95 p-1.5 text-sm shadow-2xl backdrop-blur">
+            <span className="px-2 tabular-nums text-ink-muted" aria-live="polite">
+              <span className="font-semibold text-ink">{selectionCount}</span> selected
+            </span>
+            <button
+              type="button"
+              onClick={selectionCount === listing.entries.length ? clearSelection : selectEverything}
+              className="h-9 shrink-0 rounded-xl px-2.5 text-ink-muted transition hover:bg-surface hover:text-ink"
+            >
+              {selectionCount === listing.entries.length ? "None" : "All"}
+            </button>
+            <button
+              type="button"
+              onClick={requestBatchDelete}
+              disabled={selectionCount === 0 || busy}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-danger px-3 font-semibold text-white transition hover:bg-danger/90 disabled:opacity-40"
+            >
+              <TrashIcon width={16} height={16} />
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={exitSelectMode}
+              aria-label="Exit selection"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-ink-muted transition hover:bg-surface hover:text-ink"
+            >
+              <CloseIcon width={18} height={18} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {toast ? (
         <div
           role="status"
-          className={`animate-pop-in pointer-events-none fixed inset-x-0 bottom-5 z-[60] mx-auto w-fit max-w-[92vw] rounded-full px-4 py-2.5 text-sm shadow-xl ${
+          className={`animate-pop-in pointer-events-none fixed inset-x-0 z-[60] mx-auto w-fit max-w-[92vw] rounded-full px-4 py-2.5 text-sm shadow-xl ${
             toast.tone === "error"
               ? "bg-danger text-white"
               : "border border-line/60 bg-surface-raised text-ink"
           }`}
+          style={{ bottom: selectMode && !readOnly ? "5.25rem" : "1.25rem" }}
         >
           <span className="flex items-center gap-2">
             {toast.tone === "error" ? <AlertIcon width={16} height={16} /> : null}

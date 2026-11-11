@@ -54,3 +54,26 @@ export interface LibraryFolder {
   createdAt: number;
   exists: boolean;
 }
+
+/** Per-item outcome of a batch delete. */
+export interface DeleteItemResult {
+  token: string;
+  ok: boolean;
+  kind?: EntryKind;
+  /** It lived inside another selected folder, so it went with that folder. */
+  removedWithParent?: boolean;
+  removedLibraryEntries?: number;
+  error?: string;
+  status?: number;
+}
+
+export interface BatchDeleteResponse {
+  deleted: true;
+  kind: EntryKind | "batch";
+  batch: boolean;
+  requested: number;
+  deletedCount: number;
+  failedCount: number;
+  removedLibraryEntries: number;
+  results: DeleteItemResult[];
+}

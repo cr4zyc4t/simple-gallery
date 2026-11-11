@@ -1,5 +1,6 @@
 "use client";
-import { DownloadIcon, FolderIcon, ImageIcon, TrashIcon } from "./icons";
+import { useCallback, useEffect, useRef } from "react";
+import { CheckIcon, DownloadIcon, FolderIcon, ImageIcon, TrashIcon } from "./icons";
 import { endpoints } from "@/lib/client";
 import { formatBytes, formatDate } from "@/lib/format";
 import type { GalleryEntry, ViewMode } from "@/lib/types";
@@ -9,24 +10,122 @@ interface EntryItemProps {
   view: ViewMode;
   readOnly: boolean;
   busy: boolean;
+  /** Multi-select is active: tapping toggles selection instead of opening. */
+  selectable: boolean;
+  selected: boolean;
   onOpenFolder: (entry: GalleryEntry) => void;
   onPreview: (entry: GalleryEntry) => void;
   onRequestDelete: (entry: GalleryEntry) => void;
+  onToggleSelect: (entry: GalleryEntry, modifiers?: SelectModifiers) => void;
+}
+
+export interface SelectModifiers {
+  shift: boolean;
+  meta: boolean;
 }
 
 const ACTIONS_VISIBLE =
   "opacity-100 transition [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-within:opacity-100";
+
+const LONG_PRESS_MS = 420;
+const LONG_PRESS_SLACK = 12;
+
+/** Hold-to-select on touch devices (mouse users get the toolbar control). */
+function useLongPress(enabled: boolean, onLongPress: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set when a hold fired, so the click that follows it is swallowed. */
+  const consumed = useRef(false);
+  const origin = useRef({ x: 0, y: 0 });
+
+  const cancel = useCallback(() => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancel, [cancel]);
+
+  return {
+    /** True (once) when the click is the tail of a completed hold. */
+    consume: () => {
+      if (!consumed.current) return false;
+      consumed.current = false;
+      return true;
+    },
+    bind: {
+      onPointerDown: (event: React.PointerEvent) => {
+        if (!enabled || event.pointerType === "mouse") return;
+        origin.current = { x: event.clientX, y: event.clientY };
+        cancel();
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          consumed.current = true;
+          navigator.vibrate?.(12);
+          onLongPress();
+        }, LONG_PRESS_MS);
+      },
+      onPointerMove: (event: React.PointerEvent) => {
+        if (!timer.current) return;
+        const moved =
+          Math.abs(event.clientX - origin.current.x) + Math.abs(event.clientY - origin.current.y);
+        if (moved > LONG_PRESS_SLACK) cancel();
+      },
+      onPointerUp: cancel,
+      onPointerCancel: () => {
+        cancel();
+        consumed.current = false;
+      },
+      onContextMenu: (event: React.MouseEvent) => {
+        if (consumed.current) event.preventDefault();
+      },
+    },
+  };
+}
 
 export default function EntryItem({
   entry,
   view,
   readOnly,
   busy,
+  selectable,
+  selected,
   onOpenFolder,
   onPreview,
   onRequestDelete,
+  onToggleSelect,
 }: EntryItemProps) {
   const isFolder = entry.kind === "folder";
+
+  // A hold only starts a selection while selection is off; once it is on,
+  // plain taps toggle.
+  const hold = useLongPress(!selectable, () => onToggleSelect(entry));
+
+  const activate = (modifiers?: SelectModifiers) => {
+    if (hold.consume()) return;
+    if (selectable || modifiers?.meta) {
+      onToggleSelect(entry, modifiers);
+    } else if (isFolder) {
+      onOpenFolder(entry);
+    } else {
+      onPreview(entry);
+    }
+  };
+
+  const badge = (
+    <span
+      aria-hidden="true"
+      className={`grid h-6 w-6 place-items-center rounded-full border-2 transition ${
+        selected
+          ? "border-accent bg-accent text-white"
+          : "border-white/80 bg-black/45 text-transparent backdrop-blur"
+      }`}
+    >
+      <CheckIcon width={15} height={15} />
+    </span>
+  );
+
+  const selectedRing = selected ? "ring-2 ring-accent ring-offset-2 ring-offset-surface-sunken" : "";
 
   const actions = (
     <div className={`flex items-center gap-0.5 ${ACTIONS_VISIBLE}`}>
@@ -65,10 +164,18 @@ export default function EntryItem({
       <li className="group relative">
         <button
           type="button"
-          onClick={() => (isFolder ? onOpenFolder(entry) : onPreview(entry))}
-          aria-label={isFolder ? `Open folder ${entry.name}` : `Open image ${entry.name}`}
-          className="flex min-h-16 w-full items-center gap-3 rounded-xl border border-transparent px-2 py-2 text-left transition hover:border-line/60 hover:bg-surface-raised"
+          role={selectable ? "checkbox" : undefined}
+          aria-checked={selectable ? selected : undefined}
+          onClick={(event) =>
+            activate({ shift: event.shiftKey, meta: event.ctrlKey || event.metaKey })
+          }
+          {...hold.bind}
+          aria-label={
+            selectable ? `Select ${entry.name}` : isFolder ? `Open folder ${entry.name}` : `Open image ${entry.name}`
+          }
+          className={`flex min-h-16 w-full items-center gap-3 rounded-xl border border-transparent px-2 py-2 text-left transition hover:border-line/60 hover:bg-surface-raised ${selectedRing}`}
         >
+          {selectable ? <span className="shrink-0">{badge}</span> : null}
           <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-sunken ring-1 ring-line/50">
             {isFolder ? (
               entry.coverToken ? (
@@ -112,9 +219,11 @@ export default function EntryItem({
             </span>
           </span>
         </button>
-        <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 [&>*]:pointer-events-auto">
-          {actions}
-        </div>
+        {selectable ? null : (
+          <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 [&>*]:pointer-events-auto">
+            {actions}
+          </div>
+        )}
       </li>
     );
   }
@@ -123,9 +232,16 @@ export default function EntryItem({
     <li className="group relative">
       <button
         type="button"
-        onClick={() => (isFolder ? onOpenFolder(entry) : onPreview(entry))}
-        aria-label={isFolder ? `Open folder ${entry.name}` : `Open image ${entry.name}`}
-        className="block w-full overflow-hidden rounded-xl border border-line/50 bg-surface-raised transition hover:border-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        role={selectable ? "checkbox" : undefined}
+        aria-checked={selectable ? selected : undefined}
+        onClick={(event) =>
+          activate({ shift: event.shiftKey, meta: event.ctrlKey || event.metaKey })
+        }
+        {...hold.bind}
+        aria-label={
+          selectable ? `Select ${entry.name}` : isFolder ? `Open folder ${entry.name}` : `Open image ${entry.name}`
+        }
+        className={`block w-full overflow-hidden rounded-xl border border-line/50 bg-surface-raised transition hover:border-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${selectedRing}`}
       >
         <span className="relative block aspect-square w-full overflow-hidden bg-surface-sunken">
           {isFolder ? (
@@ -154,6 +270,9 @@ export default function EntryItem({
               className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
             />
           )}
+          {selectable ? (
+            <span className="absolute left-1.5 top-1.5 drop-shadow-[0_1px_4px_rgba(0,0,0,0.7)]">{badge}</span>
+          ) : null}
           <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent px-2 pb-1.5 pt-6 text-left">
             <span className="block truncate text-xs font-medium text-white/95">{entry.name}</span>
             <span className="block truncate text-[10px] uppercase tracking-wide text-white/60">
@@ -164,7 +283,7 @@ export default function EntryItem({
           </span>
         </span>
       </button>
-      <div className="absolute right-1.5 top-1.5">{actions}</div>
+      {selectable ? null : <div className="absolute right-1.5 top-1.5">{actions}</div>}
     </li>
   );
 }

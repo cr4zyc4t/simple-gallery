@@ -23,6 +23,9 @@ function encodeBase64url(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
 }
 
+/** NUL and other C0/C1 controls are never legal in a real path. */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
+
 function decodeBase64url(value: string): string {
   return Buffer.from(value, "base64url").toString("utf8");
 }
@@ -38,7 +41,9 @@ export function decodeToken(token: string): string {
   } catch {
     throw new PathError("Invalid path token");
   }
-  if (!decoded || !path.isAbsolute(decoded)) {
+  // Control characters (NUL included) survive base64 round-trips and make
+  // fs calls throw TypeError deep inside Node, so reject them here.
+  if (!decoded || !path.isAbsolute(decoded) || CONTROL_CHARS.test(decoded)) {
     throw new PathError("Invalid path token");
   }
   return path.normalize(decoded);
