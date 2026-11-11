@@ -1,0 +1,22 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+data
+*.db
+*.db-wal
+*.db-shm
+.env
+.env*.local
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md
+npm-debug.log*
+.DS_Store
+.idea
+.vscode
+# media is mounted at runtime, never baked into the image
+media

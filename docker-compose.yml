@@ -1,0 +1,31 @@
+services:
+  gallery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: simple-gallery:latest
+    container_name: simple-gallery
+    restart: unless-stopped
+    init: true
+    ports:
+      # host:container — change the left side to run on another port
+      - "3000:3000"
+    environment:
+      # Folder listed on start.
+      GALLERY_ROOT: /data/gallery
+      # Everything under /data can be browsed / managed.
+      GALLERY_ALLOWED_ROOTS: /data
+      GALLERY_DB_PATH: /data/gallery.db
+      GALLERY_CACHE_DIR: /data/thumbs
+      # Set to "1" to hide delete actions.
+      GALLERY_READ_ONLY: "0"
+    volumes:
+      # Library image folder (starts empty; the repo's ./media samples are used
+      # below for a quick demo — remove that line for real usage).
+      - gallery-data:/data
+      - ./media:/data/gallery
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  gallery-data:

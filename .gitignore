@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+build/
+
+# runtime state (sqlite db, wal/shm, thumbnail cache)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# local env
+.env
+.env*.local
+
+# editor / os
+.DS_Store
+*.log
+next-env.d.ts
+tsconfig.tsbuildinfo
+.idea/
+.vscode/
