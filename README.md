@@ -24,6 +24,7 @@ shows what is already on disk.
 | Delete many items at once | toolbar **Select** → tap / hold / Shift+click → **Delete** (`DELETE /api/entry` with `paths[]`) |
 | Responsive on desktop / tablet / mobile | sidebar on ≥1024px, drawer below; 2→8 column grid |
 | Controls stay reachable while scrolling | the control bar is sticky; the folder name and counts scroll away |
+| Back button works like a native app | the folder and the open picture live in the URL (`?d=`, `?i=`), so every screen is shareable |
 | Deploy with Docker | multi-stage `Dockerfile` + `docker-compose.yml` |
 | Database | Drizzle ORM + better-sqlite3, table `folders` (the user's library list) |
 
@@ -165,6 +166,17 @@ they are **not** a capability or a secret.
   Google's threshold); reading the cookie in `page.tsx` and skipping the now
   redundant startup fetch brings it to **CLS 0**. A stale or hand-edited cookie
   falls back to the defaults field by field.
+* **History** (`src/lib/url-state.ts`) — the screen is encoded in the query
+  string: `/?d=<folder token>` and `/?d=<folder>&i=<picture token>`, with the
+  gallery root spelled as no parameter at all. Opening a folder or a picture
+  pushes an entry, paging inside the viewer *replaces* it, and closing the viewer
+  pops it — so Back closes a picture, then leaves the folder, instead of walking
+  back through every picture you glanced at. Layout and ordering are cookie-only
+  and never touch the history stack. Both parameters are server-rendered, so a
+  shared link paints the right folder immediately and opens the picture on
+  hydration; `page.tsx` ignores a picture token that is not in the folder it
+  managed to show, and a token that escapes the allowed roots falls back to the
+  gallery root (the client then rewrites the address bar to match).
 * **Sticky chrome** (`GalleryToolbar`) — the app header (title + breadcrumb) is
   sticky, and the control bar — up, order by, direction, layout, select — is
   sticky right below it, so sorting or switching view deep in a long folder needs

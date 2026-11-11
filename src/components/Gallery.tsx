@@ -19,6 +19,7 @@ import {
 } from "./icons";
 import { deleteEntries, deleteEntry, fetchEntryStats, fetchLibrary, fetchListing, removeLibraryFolder } from "@/lib/client";
 import { HEADER_HEIGHT_VAR, DEFAULT_PREFS, type Prefs } from "@/lib/prefs";
+import { readScreen, urlFor, type Screen } from "@/lib/url-state";
 import { usePrefs } from "@/lib/use-prefs";
 import type {
   FolderInfo,
@@ -43,16 +44,34 @@ interface GalleryProps {
   initialLibrary: LibraryFolder[];
   /** Ordering/layout the server already rendered with. */
   initialPrefs?: Prefs;
+  /** Picture the URL asked for, already validated against `initialListing`. */
+  initialImage?: string | null;
+  /** Token of the gallery root, which the address bar spells as no folder at all. */
+  rootToken?: string;
+}
+
+/** The gallery root is "no folder" in the URL and in state. */
+function folderParam(token: string | null, root: string): string | null {
+  return token && token !== root ? token : null;
 }
 
 export default function Gallery({
   initialListing,
   initialLibrary,
   initialPrefs = DEFAULT_PREFS,
+  initialImage = null,
+  rootToken = "",
 }: GalleryProps) {
+  const rootTokenRef = useRef(rootToken);
+  useEffect(() => {
+    rootTokenRef.current = rootToken;
+  }, [rootToken]);
+
   const [listing, setListing] = useState<ListingResponse>(initialListing);
   const [library, setLibrary] = useState<LibraryFolder[]>(initialLibrary);
-  const [token, setToken] = useState<string | null>(initialListing.folder.token || null);
+  const [token, setToken] = useState<string | null>(() =>
+    folderParam(initialListing.folder.token, rootToken),
+  );
   const [loading, setLoading] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +100,82 @@ export default function Gallery({
     () => listing.entries.filter((entry): entry is GalleryEntry => entry.kind === "image"),
     [listing.entries],
   );
+
+  // ------------------------------------------------------------------ history
+  // Back should close a picture first and leave the folder only after that, the
+  // way a native app behaves, so every screen change is mirrored in the history
+  // stack. Paging inside the viewer replaces its entry, so Back closes the viewer
+  // instead of walking back through every picture.
+  const tokenRef = useRef(token);
+  const imagesRef = useRef(images);
+  useEffect(() => {
+    tokenRef.current = token;
+    imagesRef.current = images;
+  }, [token, images]);
+
+  /**
+   * True while the *top history entry* is one this session pushed for the viewer.
+   * A deep link starts open but owns nothing to pop, so it must start false.
+   */
+  const viewerOwnsEntry = useRef(false);
+  /** Picture the URL asked for, until its folder is on screen. */
+  const pendingImage = useRef<string | null>(initialImage ?? null);
+
+  const writeUrl = useCallback((screen: Screen, replace = false) => {
+    const url = urlFor(screen);
+    if (url === window.location.pathname + window.location.search) return;
+    window.history[replace ? "replaceState" : "pushState"](screen, "", url);
+  }, []);
+
+  // A hand-written or stale ?d= that the server resolved elsewhere must not stay
+  // in the address bar. Once is enough: later moves write the URL themselves.
+  const urlReconciled = useRef(false);
+  useEffect(() => {
+    if (urlReconciled.current) return;
+    urlReconciled.current = true;
+    const screen = readScreen(window.location.search);
+    const actual = folderParam(initialListing.folder.token, rootToken);
+    if (folderParam(screen.folder, rootToken) !== actual) writeUrl({ folder: actual, image: null }, true);
+  }, [initialListing.folder.token, rootToken, writeUrl]);
+
+  // Back/forward: the URL decides what is on screen.
+  useEffect(() => {
+    const onPop = () => {
+      const screen = readScreen(window.location.search);
+      viewerOwnsEntry.current = Boolean(screen.image);
+      const folder = folderParam(screen.folder, rootTokenRef.current);
+      if (folder !== tokenRef.current) {
+        tokenRef.current = folder;
+        setToken(folder);
+      }
+      if (!screen.image) {
+        pendingImage.current = null;
+        setPreviewIndex(null);
+        return;
+      }
+      const index = imagesRef.current.findIndex((image) => image.token === screen.image);
+      if (index >= 0) {
+        pendingImage.current = null;
+        setPreviewIndex(index);
+      } else {
+        // the folder is still loading; resolved by the effect below
+        pendingImage.current = screen.image;
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Open the picture the URL asked for once its folder is on screen (deep link,
+  // or back/forward across folders).
+  useEffect(() => {
+    const wanted = pendingImage.current;
+    if (!wanted) return;
+    const index = images.findIndex((image) => image.token === wanted);
+    if (index < 0) return;
+    pendingImage.current = null;
+    setPreviewIndex(index);
+  }, [images]);
 
   const notify = useCallback((message: string, tone: "ok" | "error" = "ok") => {
     setToast({ message, tone });
@@ -111,7 +206,7 @@ export default function Gallery({
   // owns collation so both views stay consistent). The very first fetch is
   // skipped when the server already rendered exactly this listing.
   const served = useRef({
-    token: initialListing.folder.token || null,
+    token: folderParam(initialListing.folder.token, rootToken),
     sort: initialPrefs.sort,
     dir: initialPrefs.dir,
   });
@@ -150,7 +245,7 @@ export default function Gallery({
       .then((data) => {
         if (cancelled || id !== requestId.current) return;
         setListing(data);
-        setToken(data.folder.token || null);
+        setToken(folderParam(data.folder.token, rootTokenRef.current));
         setPreviewIndex(null);
       })
       .catch((requestError: unknown) => {
@@ -165,11 +260,56 @@ export default function Gallery({
     };
   }, [token, sort, dir]);
 
-  const goTo = useCallback((nextToken: string | null) => {
-    setDrawerOpen(false);
+  const goTo = useCallback(
+    (nextToken: string | null) => {
+      setDrawerOpen(false);
+      setPreviewIndex(null);
+      pendingImage.current = null;
+      viewerOwnsEntry.current = false;
+      const next = folderParam(nextToken, rootTokenRef.current);
+      if (next === tokenRef.current) {
+        // Same folder: only drop a leftover ?i=, never add an entry.
+        writeUrl({ folder: next, image: null }, true);
+        return;
+      }
+      tokenRef.current = next;
+      writeUrl({ folder: next, image: null });
+      setToken(next);
+    },
+    [writeUrl],
+  );
+
+  const openImage = useCallback(
+    (index: number) => {
+      const entry = imagesRef.current[index];
+      if (!entry) return;
+      setPreviewIndex(index);
+      viewerOwnsEntry.current = true;
+      writeUrl({ folder: tokenRef.current, image: entry.token });
+    },
+    [writeUrl],
+  );
+
+  const changeImage = useCallback(
+    (index: number) => {
+      setPreviewIndex(index);
+      const entry = imagesRef.current[index];
+      if (entry) writeUrl({ folder: tokenRef.current, image: entry.token }, true);
+    },
+    [writeUrl],
+  );
+
+  /** Closing the viewer is a step back, so the browser button stays coherent. */
+  const closeImage = useCallback(() => {
     setPreviewIndex(null);
-    setToken(nextToken);
-  }, []);
+    pendingImage.current = null;
+    if (viewerOwnsEntry.current) {
+      viewerOwnsEntry.current = false;
+      window.history.back();
+    } else {
+      writeUrl({ folder: tokenRef.current, image: null }, true);
+    }
+  }, [writeUrl]);
 
   /** Leaving a folder always drops the selection. */
   useEffect(() => {
@@ -349,15 +489,31 @@ export default function Gallery({
     setPending(null);
     if (!ok) return;
     if (wasPreviewing) {
-      setPreviewIndex((current) => {
-        if (current === null) return null;
-        const nextImages = images.filter((item) => item.token !== entry.token);
-        if (nextImages.length === 0) return null;
-        return Math.min(current, nextImages.length - 1);
-      });
+      const remaining = images.filter((item) => item.token !== entry.token);
+      const nextIndex =
+        remaining.length === 0
+          ? null
+          : Math.min(previewIndex ?? 0, remaining.length - 1);
+      if (nextIndex === null) {
+        closeImage();
+      } else {
+        setPreviewIndex(nextIndex);
+        writeUrl({ folder: tokenRef.current, image: remaining[nextIndex].token }, true);
+      }
     }
     notify(`Deleted “${entry.name}”`);
-  }, [exitSelectMode, images, loadLibrary, notify, pending, performDelete, previewIndex, removeLocalEntries]);
+  }, [
+    closeImage,
+    exitSelectMode,
+    images,
+    loadLibrary,
+    notify,
+    pending,
+    performDelete,
+    previewIndex,
+    removeLocalEntries,
+    writeUrl,
+  ]);
 
   const handleFolderAdded = useCallback(
     (folder: LibraryFolder, openFolder: boolean) => {
@@ -429,8 +585,8 @@ export default function Gallery({
   const previewEntry = previewIndex !== null ? images[previewIndex] : undefined;
   useEffect(() => {
     if (previewIndex === null || previewEntry) return;
-    setPreviewIndex(null);
-  }, [previewEntry, previewIndex]);
+    closeImage();
+  }, [closeImage, previewEntry, previewIndex]);
 
   const libraryPanel = (
     <LibraryPanel
@@ -604,7 +760,7 @@ export default function Gallery({
                     onOpenFolder={(item) => goTo(item.token)}
                     onPreview={(item) => {
                       const index = images.findIndex((image) => image.token === item.token);
-                      if (index >= 0) setPreviewIndex(index);
+                      if (index >= 0) openImage(index);
                     }}
                     onRequestDelete={(item) => void requestDelete(item)}
                     onToggleSelect={(item, modifiers) => toggleSelect(item, position, modifiers)}
@@ -625,7 +781,7 @@ export default function Gallery({
                     onOpenFolder={(item) => goTo(item.token)}
                     onPreview={(item) => {
                       const index = images.findIndex((image) => image.token === item.token);
-                      if (index >= 0) setPreviewIndex(index);
+                      if (index >= 0) openImage(index);
                     }}
                     onRequestDelete={(item) => void requestDelete(item)}
                     onToggleSelect={(item, modifiers) => toggleSelect(item, position, modifiers)}
@@ -681,8 +837,8 @@ export default function Gallery({
           index={previewIndex ?? 0}
           readOnly={readOnly}
           deleting={deletingToken === previewEntry.token}
-          onIndexChange={setPreviewIndex}
-          onClose={() => setPreviewIndex(null)}
+          onIndexChange={changeImage}
+          onClose={closeImage}
           onRequestDelete={(entry) => void requestDelete(entry)}
         />
       ) : null}
