@@ -164,3 +164,10 @@ export const ZoomOutIcon = (props: IconProps) => (
     <path d="M15.4 15.4 21 21M7.8 10.5h5.4" />
   </Base>
 );
+
+export const ChevronsUpIcon = (props: IconProps) => (
+  <Base {...props}>
+    <path d="m6 13 6-6 6 6" />
+    <path d="m6 18.5 6-6 6 6" />
+  </Base>
+);

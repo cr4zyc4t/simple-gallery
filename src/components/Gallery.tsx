@@ -9,6 +9,7 @@ import LibraryPanel from "./LibraryPanel";
 import Lightbox from "./Lightbox";
 import {
   AlertIcon,
+  ChevronsUpIcon,
   CloseIcon,
   FolderPlusIcon,
   HomeIcon,
@@ -18,7 +19,7 @@ import {
   TrashIcon,
 } from "./icons";
 import { deleteEntries, deleteEntry, fetchEntryStats, fetchLibrary, fetchListing, removeLibraryFolder } from "@/lib/client";
-import { HEADER_HEIGHT_VAR, DEFAULT_PREFS, type Prefs } from "@/lib/prefs";
+import { DEFAULT_PREFS, type Prefs } from "@/lib/prefs";
 import { readScreen, urlFor, type Screen } from "@/lib/url-state";
 import { usePrefs } from "@/lib/use-prefs";
 import type {
@@ -212,22 +213,44 @@ export default function Gallery({
   });
   const skipFirstFetch = useRef(true);
 
-  // The control bar and the library panel pin themselves just below the app
-  // header; publishing its real height keeps that offset correct when the header
-  // wraps, changes font size or is zoomed.
+  // The header (title, breadcrumb) scrolls away and only the control bar stays
+  // pinned, so scrolling has to answer two questions: is the header still on
+  // screen (if not, the bar grows a breadcrumb button), and are we far enough
+  // down to offer a way back up.
   const headerRef = useRef<HTMLElement>(null);
+  const [scrollState, setScrollState] = useState({ headerHidden: false, farFromTop: false });
   useEffect(() => {
-    const header = headerRef.current;
-    if (!header || typeof ResizeObserver === "undefined") return;
-    const sync = () =>
-      document.documentElement.style.setProperty(
-        HEADER_HEIGHT_VAR,
-        `${Math.ceil(header.getBoundingClientRect().height)}px`,
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const header = headerRef.current;
+      const y = window.scrollY;
+      const next = {
+        headerHidden: header ? y >= header.offsetHeight : false,
+        farFromTop: y > Math.max(320, window.innerHeight * 0.6),
+      };
+      setScrollState((current) =>
+        current.headerHidden === next.headerHidden && current.farFromTop === next.farFromTop
+          ? current
+          : next,
       );
-    sync();
-    const observer = new ResizeObserver(sync);
-    observer.observe(header);
-    return () => observer.disconnect();
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  const backToTop = useCallback(() => {
+    const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
   }, []);
 
   useEffect(() => {
@@ -601,10 +624,9 @@ export default function Gallery({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header
-        ref={headerRef}
-        className="sticky top-0 z-30 border-b border-line/60 bg-surface-sunken/95 backdrop-blur"
-      >
+      {/* Deliberately not sticky: the listing control bar is the only pinned
+          chrome, and it takes over the breadcrumb once this has scrolled away. */}
+      <header ref={headerRef} className="border-b border-line/60 bg-surface-sunken">
         <div className="mx-auto flex w-full max-w-[1800px] items-center gap-2 px-3 py-2 sm:px-4 sm:py-3">
           <button
             type="button"
@@ -673,7 +695,7 @@ export default function Gallery({
 
       <div className="mx-auto flex w-full max-w-[1800px] flex-1 gap-4 px-3 py-3 sm:px-4 sm:py-4">
         <aside className="hidden w-64 shrink-0 lg:block xl:w-72">
-          <div className="sticky top-[calc(var(--header-h,91px)+12px)] max-h-[calc(100dvh-var(--header-h,91px)-28px)] overflow-hidden rounded-2xl border border-line/60 bg-surface p-3">
+          <div className="sticky top-3 max-h-[calc(100dvh-24px)] overflow-hidden rounded-2xl border border-line/60 bg-surface p-3">
             {libraryPanel}
           </div>
         </aside>
@@ -692,6 +714,8 @@ export default function Gallery({
             onSortChange={(next) => setPrefs({ sort: next })}
             onDirChange={(next) => setPrefs({ dir: next })}
             onUp={() => goTo(folder.parentToken)}
+            showHome={scrollState.headerHidden}
+            onHome={() => goTo(null)}
             onToggleSelectMode={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
           />
 
@@ -903,6 +927,21 @@ export default function Gallery({
         onCancel={() => setPending(null)}
         onConfirm={() => void confirmPending()}
       />
+
+      {/* Floating way back up. Out of the way while the bottom selection bar, a
+          dialog or the viewer owns that corner of the screen. */}
+      {scrollState.farFromTop && !selectMode && !previewEntry && !pending && !addOpen ? (
+        <button
+          type="button"
+          onClick={backToTop}
+          aria-label="Back to top"
+          title="Back to top"
+          className="animate-pop-in fixed bottom-4 right-4 z-30 grid h-12 w-12 place-items-center rounded-full border border-line/70 bg-surface-raised/95 text-ink shadow-2xl backdrop-blur transition hover:bg-surface-raised active:scale-95"
+          style={{ bottom: "max(1rem, env(safe-area-inset-bottom))" }}
+        >
+          <ChevronsUpIcon width={22} height={22} />
+        </button>
+      ) : null}
 
       {selectMode && !readOnly ? (
         <div className="animate-pop-in fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">

@@ -23,7 +23,7 @@ shows what is already on disk.
 | Delete a folder, confirm only when it is not empty | empty folders go straight away, non-empty ones ask first |
 | Delete many items at once | toolbar **Select** → tap / hold / Shift+click → **Delete** (`DELETE /api/entry` with `paths[]`) |
 | Responsive on desktop / tablet / mobile | sidebar on ≥1024px, drawer below; 2→8 column grid |
-| Controls stay reachable while scrolling | the control bar is sticky; the folder name and counts scroll away |
+| Controls stay reachable while scrolling | only the control bar is pinned; the header, folder name and counts scroll away, and a floating **back to top** button brings them back |
 | Back button works like a native app | the folder and the open picture live in the URL (`?d=`, `?i=`), so every screen is shareable |
 | Deploy with Docker | multi-stage `Dockerfile` + `docker-compose.yml` |
 | Database | Drizzle ORM + better-sqlite3, table `folders` (the user's library list) |
@@ -177,15 +177,19 @@ they are **not** a capability or a secret.
   hydration; `page.tsx` ignores a picture token that is not in the folder it
   managed to show, and a token that escapes the allowed roots falls back to the
   gallery root (the client then rewrites the address bar to match).
-* **Sticky chrome** (`GalleryToolbar`) — the app header (title + breadcrumb) is
-  sticky, and the control bar — up, order by, direction, layout, select — is
-  sticky right below it, so sorting or switching view deep in a long folder needs
-  no scroll back. The folder name and counts sit above it and scroll away with
-  the page. The offset comes from a `--header-h` custom property that `Gallery`
-  publishes from the header's real height with a `ResizeObserver`, so the bar
-  cannot overlap or float even when the header wraps or the page is zoomed; the
-  strip behind the bar is painted in the solid page colour, so tiles are clipped
-  as they pass under it.
+* **Sticky chrome** (`GalleryToolbar`) — the only pinned element is the control
+  bar (up, home, order by, direction, layout, select), stuck to the top of the
+  viewport; the app header with its breadcrumb, and the folder name and counts,
+  scroll away with the listing. Once the header is off screen the bar grows a
+  breadcrumb button (⌂ plus the folder name) that jumps back to the gallery root,
+  so orientation and a way out are never more than a scroll away — and the action
+  cluster is right-aligned, so that button appearing never shifts the other
+  controls. A floating **back to top** button appears after about two thirds of a
+  screen of scrolling and hides itself while the viewer, a dialog or the bottom
+  selection bar owns that corner. Scroll state is read in one `rAF`-throttled
+  `passive` listener that only re-renders when a threshold is crossed; the strip
+  behind the bar is painted in the solid page colour, so tiles clip as they pass
+  under it instead of showing through.
 * **Sorting** — `Intl.Collator({numeric:true})`, so `IMG_2.jpg` sorts before
   `IMG_10.jpg`; date mode falls back to the name for identical timestamps.
 * Hidden entries (`.`, `~$`, `@eaDir`, `.DS_Store`, `Thumbs.db`, …) and non-image

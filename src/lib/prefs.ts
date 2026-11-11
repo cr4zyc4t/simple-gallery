@@ -1,9 +1,5 @@
 import type { SortDir, SortKey, ViewMode } from "./types";
 
-/** Height of the sticky app header, published at runtime by Gallery so the
- *  sticky listing controls can pin right below it (src/app/globals.css). */
-export const HEADER_HEIGHT_VAR = "--header-h";
-
 /**
  * Viewer preferences (layout, ordering).
  *

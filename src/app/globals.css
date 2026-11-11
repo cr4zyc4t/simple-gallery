@@ -15,12 +15,6 @@
     "Noto Sans", sans-serif;
 }
 
-/* Fallback for the sticky app header height; Gallery overwrites it with the
-   measured value on mount, so the sticky control bar never overlaps or floats. */
-:root {
-  --header-h: 91px;
-}
-
 html,
 body {
   height: 100%;
