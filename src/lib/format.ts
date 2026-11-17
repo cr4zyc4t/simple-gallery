@@ -11,23 +11,21 @@ export function formatBytes(bytes: number | null | undefined): string {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 }
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
+const pad2 = (value: number) => String(value).padStart(2, "0");
 
-const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-export function formatDate(timestamp: number | null | undefined, withTime = false): string {
+/**
+ * Formats a timestamp as `YYYY/MM/DD HH:mm`, or just `HH:mm` when it is today.
+ */
+export function formatDate(timestamp: number | null | undefined): string {
   if (!timestamp) return "—";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "—";
-  return withTime ? dateTimeFormatter.format(date) : dateFormatter.format(date);
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) return time;
+  return `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(date.getDate())} ${time}`;
 }
