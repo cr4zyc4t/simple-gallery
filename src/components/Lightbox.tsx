@@ -14,6 +14,7 @@ import { endpoints } from "@/lib/client";
 import type { GalleryEntry } from "@/lib/types";
 
 interface LightboxProps {
+  /** Pictures of one folder, in listing order. Videos get their own player. */
   images: GalleryEntry[];
   index: number;
   readOnly: boolean;

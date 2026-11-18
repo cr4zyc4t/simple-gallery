@@ -68,6 +68,23 @@ export const IMAGE_EXTENSIONS = [
   ".heif",
 ] as const;
 
+/**
+ * Video containers. The first group plays in evergreen browsers; the rest are
+ * listed and downloadable but may not decode in the viewer (the lightbox then
+ * falls back to its "preview not available" panel).
+ */
+export const VIDEO_EXTENSIONS = [
+  ".mp4",
+  ".m4v",
+  ".mov",
+  ".webm",
+  ".mkv",
+  ".avi",
+  ".mpg",
+  ".mpeg",
+  ".m2ts",
+] as const;
+
 /** Formats sharp can reliably re-encode for thumbnails. */
 export const THUMBNAIL_FORMATS = new Set([
   ".jpg",
@@ -102,6 +119,15 @@ export const MIME_TYPES: Record<string, string> = {
   ".tiff": "image/tiff",
   ".heic": "image/heic",
   ".heif": "image/heif",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
+  ".mkv": "video/x-matroska",
+  ".avi": "video/x-msvideo",
+  ".mpg": "video/mpeg",
+  ".mpeg": "video/mpeg",
+  ".m2ts": "video/mp2t",
 };
 
 export function mimeFor(filePath: string): string {
@@ -111,3 +137,23 @@ export function mimeFor(filePath: string): string {
 export function isImageFile(filePath: string): boolean {
   return (IMAGE_EXTENSIONS as readonly string[]).includes(path.extname(filePath).toLowerCase());
 }
+
+export function isVideoFile(filePath: string): boolean {
+  return (VIDEO_EXTENSIONS as readonly string[]).includes(path.extname(filePath).toLowerCase());
+}
+
+/** Anything the gallery lists and previews: pictures and videos. */
+export function isMediaFile(filePath: string): boolean {
+  return isImageFile(filePath) || isVideoFile(filePath);
+}
+
+/**
+ * ffmpeg is only used to pull a poster frame out of a video for the grid. It is
+ * optional: when the binary is missing the grid shows a video placeholder and
+ * everything else keeps working.
+ */
+export const FFMPEG_PATH = process.env.GALLERY_FFMPEG_PATH?.trim() || "ffmpeg";
+
+/** Wall-clock limit for one poster extraction, in milliseconds. */
+export const FFMPEG_TIMEOUT_MS = Number(process.env.GALLERY_FFMPEG_TIMEOUT_MS ?? 15_000);
+

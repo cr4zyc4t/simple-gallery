@@ -7,6 +7,7 @@ import EntryItem from "./EntryItem";
 import GalleryToolbar from "./GalleryToolbar";
 import LibraryPanel from "./LibraryPanel";
 import Lightbox from "./Lightbox";
+import VideoPlayer from "./VideoPlayer";
 import {
   AlertIcon,
   ChevronsUpIcon,
@@ -30,9 +31,16 @@ import type {
 } from "@/lib/types";
 
 type Pending =
-  | { type: "image"; entry: GalleryEntry }
-  | { type: "folder"; entry: GalleryEntry; folders: number; images: number; other: number }
-  | { type: "batch"; entries: GalleryEntry[]; folders: number; images: number }
+  | { type: "media"; entry: GalleryEntry }
+  | {
+      type: "folder";
+      entry: GalleryEntry;
+      folders: number;
+      images: number;
+      videos: number;
+      other: number;
+    }
+  | { type: "batch"; entries: GalleryEntry[]; folders: number; images: number; videos: number }
   | null;
 
 interface SelectionModifiers {
@@ -54,6 +62,15 @@ interface GalleryProps {
 /** The gallery root is "no folder" in the URL and in state. */
 function folderParam(token: string | null, root: string): string | null {
   return token && token !== root ? token : null;
+}
+
+/** "2 folders, 3 videos" wording, used by every delete confirmation. */
+function countParts(counts: { folders: number; images: number; videos: number }): string[] {
+  return [
+    counts.folders > 0 ? `${counts.folders} folder${counts.folders === 1 ? "" : "s"}` : null,
+    counts.images > 0 ? `${counts.images} image${counts.images === 1 ? "" : "s"}` : null,
+    counts.videos > 0 ? `${counts.videos} video${counts.videos === 1 ? "" : "s"}` : null,
+  ].filter((part): part is string => Boolean(part));
 }
 
 export default function Gallery({
@@ -83,6 +100,8 @@ export default function Gallery({
   const { view, sort, dir } = prefs;
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  /** The video the standalone player is showing, by token. */
+  const [playingToken, setPlayingToken] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending>(null);
   const [busy, setBusy] = useState(false);
   const [deletingToken, setDeletingToken] = useState<string | null>(null);
@@ -97,8 +116,14 @@ export default function Gallery({
   const readOnly = listing.readOnly;
   const requestId = useRef(0);
 
+  /** Pictures shown by the carousel, in listing order. */
   const images = useMemo(
-    () => listing.entries.filter((entry): entry is GalleryEntry => entry.kind === "image"),
+    () => listing.entries.filter((entry) => entry.kind === "image"),
+    [listing.entries],
+  );
+  /** Videos are not part of the carousel, but `?i=` may point at one. */
+  const videos = useMemo(
+    () => listing.entries.filter((entry) => entry.kind === "video"),
     [listing.entries],
   );
 
@@ -109,18 +134,40 @@ export default function Gallery({
   // instead of walking back through every picture.
   const tokenRef = useRef(token);
   const imagesRef = useRef(images);
+  const videosRef = useRef(videos);
   useEffect(() => {
     tokenRef.current = token;
     imagesRef.current = images;
-  }, [token, images]);
+    videosRef.current = videos;
+  }, [token, images, videos]);
 
   /**
-   * True while the *top history entry* is one this session pushed for the viewer.
-   * A deep link starts open but owns nothing to pop, so it must start false.
+   * True while the *top history entry* is one this session pushed for a viewer —
+   * the picture carousel or the video player, never both at the same time. A deep
+   * link starts open but owns nothing to pop, so it must start false.
    */
   const viewerOwnsEntry = useRef(false);
-  /** Picture the URL asked for, until its folder is on screen. */
-  const pendingImage = useRef<string | null>(initialImage ?? null);
+  /** Picture or video the URL asked for, until its folder is on screen. */
+  const pendingItem = useRef<string | null>(initialImage ?? null);
+
+  /**
+   * Opens whatever `?i=` named: a picture goes to the carousel at its index, a
+   * video to the standalone player. Returns false while the listing is unknown.
+   */
+  const openByToken = useCallback((wanted: string): boolean => {
+    const index = imagesRef.current.findIndex((item) => item.token === wanted);
+    if (index >= 0) {
+      setPlayingToken(null);
+      setPreviewIndex(index);
+      return true;
+    }
+    if (videosRef.current.some((item) => item.token === wanted)) {
+      setPreviewIndex(null);
+      setPlayingToken(wanted);
+      return true;
+    }
+    return false;
+  }, []);
 
   const writeUrl = useCallback((screen: Screen, replace = false) => {
     const url = urlFor(screen);
@@ -150,33 +197,27 @@ export default function Gallery({
         setToken(folder);
       }
       if (!screen.image) {
-        pendingImage.current = null;
+        pendingItem.current = null;
         setPreviewIndex(null);
+        setPlayingToken(null);
         return;
       }
-      const index = imagesRef.current.findIndex((image) => image.token === screen.image);
-      if (index >= 0) {
-        pendingImage.current = null;
-        setPreviewIndex(index);
-      } else {
+      if (!openByToken(screen.image)) {
         // the folder is still loading; resolved by the effect below
-        pendingImage.current = screen.image;
+        pendingItem.current = screen.image;
       }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [openByToken]);
 
-  // Open the picture the URL asked for once its folder is on screen (deep link,
-  // or back/forward across folders).
+  // Open the picture or video the URL asked for once its folder is on screen
+  // (deep link, or back/forward across folders).
   useEffect(() => {
-    const wanted = pendingImage.current;
+    const wanted = pendingItem.current;
     if (!wanted) return;
-    const index = images.findIndex((image) => image.token === wanted);
-    if (index < 0) return;
-    pendingImage.current = null;
-    setPreviewIndex(index);
-  }, [images]);
+    if (openByToken(wanted)) pendingItem.current = null;
+  }, [images, videos, openByToken]);
 
   const notify = useCallback((message: string, tone: "ok" | "error" = "ok") => {
     setToast({ message, tone });
@@ -270,6 +311,7 @@ export default function Gallery({
         setListing(data);
         setToken(folderParam(data.folder.token, rootTokenRef.current));
         setPreviewIndex(null);
+        setPlayingToken(null);
       })
       .catch((requestError: unknown) => {
         if (cancelled || id !== requestId.current) return;
@@ -287,7 +329,8 @@ export default function Gallery({
     (nextToken: string | null) => {
       setDrawerOpen(false);
       setPreviewIndex(null);
-      pendingImage.current = null;
+      setPlayingToken(null);
+      pendingItem.current = null;
       viewerOwnsEntry.current = false;
       const next = folderParam(nextToken, rootTokenRef.current);
       if (next === tokenRef.current) {
@@ -306,6 +349,7 @@ export default function Gallery({
     (index: number) => {
       const entry = imagesRef.current[index];
       if (!entry) return;
+      setPlayingToken(null);
       setPreviewIndex(index);
       viewerOwnsEntry.current = true;
       writeUrl({ folder: tokenRef.current, image: entry.token });
@@ -322,10 +366,32 @@ export default function Gallery({
     [writeUrl],
   );
 
+  /** A video gets its own player: the carousel never pages into or out of one. */
+  const openVideoPlayer = useCallback(
+    (entry: GalleryEntry) => {
+      setPreviewIndex(null);
+      setPlayingToken(entry.token);
+      viewerOwnsEntry.current = true;
+      writeUrl({ folder: tokenRef.current, image: entry.token });
+    },
+    [writeUrl],
+  );
+
+  const closeVideoPlayer = useCallback(() => {
+    setPlayingToken(null);
+    pendingItem.current = null;
+    if (viewerOwnsEntry.current) {
+      viewerOwnsEntry.current = false;
+      window.history.back();
+    } else {
+      writeUrl({ folder: tokenRef.current, image: null }, true);
+    }
+  }, [writeUrl]);
+
   /** Closing the viewer is a step back, so the browser button stays coherent. */
   const closeImage = useCallback(() => {
     setPreviewIndex(null);
-    pendingImage.current = null;
+    pendingItem.current = null;
     if (viewerOwnsEntry.current) {
       viewerOwnsEntry.current = false;
       window.history.back();
@@ -351,6 +417,7 @@ export default function Gallery({
     () => ({
       folders: selectedEntries.filter((entry) => entry.kind === "folder").length,
       images: selectedEntries.filter((entry) => entry.kind === "image").length,
+      videos: selectedEntries.filter((entry) => entry.kind === "video").length,
     }),
     [selectedEntries],
   );
@@ -413,6 +480,7 @@ export default function Gallery({
         counts: {
           folders: remaining.filter((item) => item.kind === "folder").length,
           images: remaining.filter((item) => item.kind === "image").length,
+          videos: remaining.filter((item) => item.kind === "video").length,
         },
       };
     });
@@ -442,11 +510,11 @@ export default function Gallery({
     [goTo, listing.folder, loadLibrary, notify, removeLocalEntries],
   );
 
-  /** Ask before deleting: images always, folders only when not empty. */
+  /** Ask before deleting: pictures and videos always, folders only when not empty. */
   const requestDelete = useCallback(
     async (entry: GalleryEntry) => {
-      if (entry.kind === "image") {
-        setPending({ type: "image", entry });
+      if (entry.kind !== "folder") {
+        setPending({ type: "media", entry });
         return;
       }
       setBusy(true);
@@ -462,6 +530,7 @@ export default function Gallery({
             entry,
             folders: stats.counts.folders,
             images: stats.counts.images,
+            videos: stats.counts.videos,
             other: stats.counts.other,
           });
         }
@@ -508,10 +577,13 @@ export default function Gallery({
 
     const entry = pending.entry;
     const wasPreviewing = previewIndex !== null && images[previewIndex]?.token === entry.token;
+    const wasPlayingVideo = playingToken === entry.token;
     const ok = await performDelete(entry);
     setPending(null);
     if (!ok) return;
-    if (wasPreviewing) {
+    if (wasPlayingVideo) {
+      closeVideoPlayer();
+    } else if (wasPreviewing) {
       const remaining = images.filter((item) => item.token !== entry.token);
       const nextIndex =
         remaining.length === 0
@@ -527,12 +599,14 @@ export default function Gallery({
     notify(`Deleted “${entry.name}”`);
   }, [
     closeImage,
+    closeVideoPlayer,
     exitSelectMode,
     images,
     loadLibrary,
     notify,
     pending,
     performDelete,
+    playingToken,
     previewIndex,
     removeLocalEntries,
     writeUrl,
@@ -574,14 +648,15 @@ export default function Gallery({
       entries: selectedEntries,
       folders: selectedCounts.folders,
       images: selectedCounts.images,
+      videos: selectedCounts.videos,
     });
-  }, [selectedCounts.folders, selectedCounts.images, selectedEntries]);
+  }, [selectedCounts.folders, selectedCounts.images, selectedCounts.videos, selectedEntries]);
 
   // Esc leaves selection mode, Delete confirms a batch (the lightbox has its own keys).
   useEffect(() => {
     if (!selectMode) return;
     const onKey = (event: KeyboardEvent) => {
-      if (previewIndex !== null || pending || addOpen || drawerOpen) return;
+      if (previewIndex !== null || playingToken !== null || pending || addOpen || drawerOpen) return;
       if (event.key === "Escape") {
         event.preventDefault();
         exitSelectMode();
@@ -597,6 +672,7 @@ export default function Gallery({
     drawerOpen,
     exitSelectMode,
     pending,
+    playingToken,
     previewIndex,
     requestBatchDelete,
     selectMode,
@@ -610,6 +686,16 @@ export default function Gallery({
     if (previewIndex === null || previewEntry) return;
     closeImage();
   }, [closeImage, previewEntry, previewIndex]);
+
+  /** What the video player shows, resolved from the current listing. */
+  const playingEntry =
+    playingToken && !previewEntry
+      ? listing.entries.find((entry) => entry.kind === "video" && entry.token === playingToken) ?? null
+      : null;
+  useEffect(() => {
+    if (!playingToken || playingEntry) return;
+    closeVideoPlayer();
+  }, [closeVideoPlayer, playingEntry, playingToken]);
 
   const libraryPanel = (
     <LibraryPanel
@@ -749,9 +835,9 @@ export default function Gallery({
               <div className="mt-6 rounded-2xl border border-dashed border-line px-6 py-14 text-center">
                 <p className="text-base font-medium">Nothing to show here</p>
                 <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
-                  This folder has no sub-folders or images yet. Images placed on the server show up
-                  automatically — add another folder from the library, or drop files into the
-                  gallery directory.
+                  This folder has no sub-folders, images or videos yet. Pictures and clips placed on
+                  the server show up automatically — add another folder from the library, or drop
+                  files into the gallery directory.
                 </p>
                 <button
                   type="button"
@@ -783,7 +869,11 @@ export default function Gallery({
                     selected={selected.includes(entry.token)}
                     onOpenFolder={(item) => goTo(item.token)}
                     onPreview={(item) => {
-                      const index = images.findIndex((image) => image.token === item.token);
+                      if (item.kind === "video") {
+                        openVideoPlayer(item);
+                        return;
+                      }
+                      const index = images.findIndex((candidate) => candidate.token === item.token);
                       if (index >= 0) openImage(index);
                     }}
                     onRequestDelete={(item) => void requestDelete(item)}
@@ -804,7 +894,11 @@ export default function Gallery({
                     selected={selected.includes(entry.token)}
                     onOpenFolder={(item) => goTo(item.token)}
                     onPreview={(item) => {
-                      const index = images.findIndex((image) => image.token === item.token);
+                      if (item.kind === "video") {
+                        openVideoPlayer(item);
+                        return;
+                      }
+                      const index = images.findIndex((candidate) => candidate.token === item.token);
                       if (index >= 0) openImage(index);
                     }}
                     onRequestDelete={(item) => void requestDelete(item)}
@@ -867,6 +961,16 @@ export default function Gallery({
         />
       ) : null}
 
+      {playingEntry ? (
+        <VideoPlayer
+          entry={playingEntry}
+          readOnly={readOnly}
+          deleting={deletingToken === playingEntry.token}
+          onClose={closeVideoPlayer}
+          onRequestDelete={(entry) => void requestDelete(entry)}
+        />
+      ) : null}
+
       <ConfirmDialog
         open={pending !== null}
         tone="danger"
@@ -876,30 +980,37 @@ export default function Gallery({
             ? `Delete ${pending.entries.length} item${pending.entries.length === 1 ? "" : "s"}?`
             : pending?.type === "folder"
               ? "Delete this folder?"
-              : "Delete this image?"
+              : `Delete this ${pending?.entry.kind === "video" ? "video" : "image"}?`
         }
-        confirmLabel={pending?.type === "batch" ? "Delete selected" : pending?.type === "folder" ? "Delete folder" : "Delete image"}
+        confirmLabel={
+          pending?.type === "batch"
+            ? "Delete selected"
+            : pending?.type === "folder"
+              ? "Delete folder"
+              : `Delete ${pending?.entry.kind === "video" ? "video" : "image"}`
+        }
         cancelLabel={pending?.type === "batch" ? "Keep them" : "Keep it"}
         description={
           pending?.type === "batch" ? (
-            <>
-              <p>
-                {pending.folders > 0 ? `${pending.folders} folder${pending.folders === 1 ? "" : "s"}` : ""}
-                {pending.folders > 0 && pending.images > 0 ? " and " : ""}
-                {pending.images > 0 ? `${pending.images} image${pending.images === 1 ? "" : "s"}` : ""}
-                {pending.folders === 0 && pending.images === 0 ? "The selected items" : ""} will be
-                permanently deleted from disk.
-              </p>
-              {pending.folders > 0 ? (
-                <p>Everything inside the selected folders goes with them.</p>
-              ) : null}
-              <p className="text-danger">This cannot be undone.</p>
-            </>
+            (() => {
+              const parts = countParts(pending);
+              return (
+                <>
+                  <p>
+                    {parts.length > 0 ? parts.join(", ") : "The selected items"} will be permanently
+                    deleted from disk.
+                  </p>
+                  {pending.folders > 0 ? (
+                    <p>Everything inside the selected folders goes with them.</p>
+                  ) : null}
+                  <p className="text-danger">This cannot be undone.</p>
+                </>
+              );
+            })()
           ) : pending?.type === "folder" ? (
             (() => {
               const parts = [
-                pending.folders > 0 ? `${pending.folders} folder${pending.folders === 1 ? "" : "s"}` : null,
-                pending.images > 0 ? `${pending.images} image${pending.images === 1 ? "" : "s"}` : null,
+                ...countParts(pending),
                 pending.other > 0 ? `${pending.other} other file${pending.other === 1 ? "" : "s"}` : null,
               ].filter(Boolean);
               return (
@@ -930,7 +1041,7 @@ export default function Gallery({
 
       {/* Floating way back up. Out of the way while the bottom selection bar, a
           dialog or the viewer owns that corner of the screen. */}
-      {scrollState.farFromTop && !selectMode && !previewEntry && !pending && !addOpen ? (
+      {scrollState.farFromTop && !selectMode && !previewEntry && !playingEntry && !pending && !addOpen ? (
         <button
           type="button"
           onClick={backToTop}

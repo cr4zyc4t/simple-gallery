@@ -75,11 +75,11 @@ export type EntryStats =
       kind: "folder";
       name: string;
       modifiedAt: number;
-      counts: { folders: number; images: number; other: number };
+      counts: { folders: number; images: number; videos: number; other: number };
       empty: boolean;
     }
   | {
-      kind: "image";
+      kind: "image" | "video";
       name: string;
       modifiedAt: number;
       sizeBytes: number;

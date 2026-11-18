@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/api";
 import { PathError, resolveToken } from "@/lib/fs/safe-path";
 import { getThumbnail } from "@/lib/thumbs";
-import { mimeFor } from "@/lib/config";
+import { getVideoPoster } from "@/lib/video-poster";
+import { isVideoFile, mimeFor } from "@/lib/config";
 import { fileResponse } from "@/lib/http-file";
 
 export const runtime = "nodejs";
@@ -18,7 +19,15 @@ export async function GET(request: Request) {
     if (stats.isDirectory()) throw new PathError("Cannot thumbnail a folder", 400);
 
     const width = Number.parseInt(url.searchParams.get("w") ?? "256", 10);
-    const thumb = await getThumbnail(target, stats, width);
+    const isVideo = isVideoFile(target);
+    const thumb = isVideo
+      ? await getVideoPoster(target, stats, width)
+      : await getThumbnail(target, stats, width);
+
+    if (!thumb) {
+      // No ffmpeg / undecodable stream: the client draws a video placeholder.
+      throw new PathError("No poster available for this video", 501);
+    }
 
     if (thumb.passthrough) {
       return fileResponse(request, target, { mime: mimeFor(target), maxAge: 120 });

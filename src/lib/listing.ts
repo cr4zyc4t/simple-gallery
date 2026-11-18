@@ -36,6 +36,7 @@ export async function buildListing(
     counts: {
       folders: entries.filter((entry) => entry.kind === "folder").length,
       images: entries.filter((entry) => entry.kind === "image").length,
+      videos: entries.filter((entry) => entry.kind === "video").length,
     },
     readOnly: READ_ONLY,
   };

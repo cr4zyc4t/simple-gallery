@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { isImageFile, GALLERY_ROOT } from "@/lib/config";
+import { isMediaFile, isVideoFile, GALLERY_ROOT } from "@/lib/config";
 import {
   PathError,
   displayRoots,
@@ -12,7 +12,7 @@ import {
   realPathOrNearest,
   toToken,
 } from "./safe-path";
-import type { BrowseEntry, BrowseResponse, GalleryEntry } from "@/lib/types";
+import type { BrowseEntry, BrowseResponse, EntryKind, GalleryEntry } from "@/lib/types";
 
 const IGNORED_NAMES = new Set([".DS_Store", "Thumbs.db", "desktop.ini", "@eaDir", "__MACOSX"]);
 const IGNORED_PREFIXES = [".", "~$"];
@@ -83,8 +83,13 @@ export async function readChildren(dir: string): Promise<DirChild[]> {
 }
 
 function toEntry(child: DirChild): GalleryEntry {
+  const kind: EntryKind = child.isDirectory
+    ? "folder"
+    : isVideoFile(child.name)
+      ? "video"
+      : "image";
   return {
-    kind: child.isDirectory ? "folder" : "image",
+    kind,
     name: child.name,
     token: toToken(child.realPath),
     modifiedAt: Number.isFinite(child.mtimeMs) ? Math.round(child.mtimeMs) : null,
@@ -94,12 +99,12 @@ function toEntry(child: DirChild): GalleryEntry {
   };
 }
 
-/** First picture inside a folder (non-recursive) — used as its cover thumbnail. */
+/** First picture or video inside a folder (non-recursive) — used as its cover thumbnail. */
 async function findCover(dir: string): Promise<string | null> {
   try {
     const children = await fsp.readdir(dir, { withFileTypes: true });
     const name = children
-      .filter((child) => (child.isFile() || child.isSymbolicLink()) && !isIgnored(child.name) && isImageFile(child.name))
+      .filter((child) => (child.isFile() || child.isSymbolicLink()) && !isIgnored(child.name) && isMediaFile(child.name))
       .map((child) => child.name)
       .sort(nameCollator.compare)[0];
     if (!name) return null;
@@ -111,16 +116,14 @@ async function findCover(dir: string): Promise<string | null> {
 }
 
 /**
- * Folder contents: sub-folders and pictures only (other file types are hidden),
- * folders first, then by the requested ordering.
+ * Folder contents: sub-folders, pictures and videos only (other file types are
+ * hidden), folders first, then by the requested ordering.
  */
 export async function listGalleryDir(
   dir: string,
   sort: { key: "name" | "date"; dir: "asc" | "desc" } = { key: "name", dir: "asc" },
 ): Promise<GalleryEntry[]> {
-  const children = (await readChildren(dir)).filter(
-    (child) => child.isDirectory || isImageFile(child.name),
-  );
+  const children = (await readChildren(dir)).filter((child) => child.isDirectory || isMediaFile(child.name));
 
   const entries = await Promise.all(
     children.map(async (child): Promise<GalleryEntry> => ({
@@ -215,17 +218,21 @@ export async function isEmptyDir(dir: string): Promise<boolean> {
   return children.length === 0;
 }
 
-export async function countChildren(dir: string): Promise<{ folders: number; images: number; other: number }> {
+export async function countChildren(
+  dir: string,
+): Promise<{ folders: number; images: number; videos: number; other: number }> {
   const children = await readChildren(dir);
   let folders = 0;
   let images = 0;
+  let videos = 0;
   let other = 0;
   for (const child of children) {
     if (child.isDirectory) folders += 1;
-    else if (isImageFile(child.name)) images += 1;
+    else if (isVideoFile(child.name)) videos += 1;
+    else if (isMediaFile(child.name)) images += 1;
     else other += 1;
   }
-  return { folders, images, other };
+  return { folders, images, videos, other };
 }
 
 export function folderInfo(rawDir: string, inLibrary: boolean) {
@@ -244,13 +251,13 @@ export function folderInfo(rawDir: string, inLibrary: boolean) {
   };
 }
 
-/** Delete a single picture. Never accepts directories. */
-export async function deleteImageFile(filePath: string): Promise<void> {
+/** Delete a single picture or video. Never accepts directories. */
+export async function deleteMediaFile(filePath: string): Promise<void> {
   let stats: fs.Stats;
   try {
     stats = await fsp.stat(filePath);
   } catch {
-    throw new PathError("Image not found", 404);
+    throw new PathError("Item not found", 404);
   }
   if (stats.isDirectory()) throw new PathError("Refusing to delete a folder here", 400);
   await fsp.rm(filePath, { force: true });

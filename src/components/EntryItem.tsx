@@ -1,6 +1,14 @@
 "use client";
-import { useCallback, useEffect, useRef } from "react";
-import { CheckIcon, DownloadIcon, FolderIcon, ImageIcon, TrashIcon } from "./icons";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CheckIcon,
+  DownloadIcon,
+  FolderIcon,
+  ImageIcon,
+  PlayIcon,
+  TrashIcon,
+  VideoIcon,
+} from "./icons";
 import { endpoints } from "@/lib/client";
 import { formatBytes, formatDate } from "@/lib/format";
 import type { GalleryEntry, ViewMode } from "@/lib/types";
@@ -83,6 +91,43 @@ function useLongPress(enabled: boolean, onLongPress: () => void) {
   };
 }
 
+/**
+ * Poster for a picture or a video. A video whose poster could not be generated
+ * (no ffmpeg, undecodable stream) falls back to a video glyph instead of a
+ * broken image.
+ */
+function MediaThumb({
+  entry,
+  width,
+  iconSize,
+  className,
+}: {
+  entry: GalleryEntry;
+  width: number;
+  iconSize: number;
+  className: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    return (
+      <span className={`grid place-items-center ${className}`}>
+        <VideoIcon className="text-ink-muted" width={iconSize} height={iconSize} />
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={endpoints.thumb(entry.token, width)}
+      alt={entry.name}
+      loading="lazy"
+      decoding="async"
+      onError={() => setBroken(true)}
+      className={className}
+    />
+  );
+}
+
 export default function EntryItem({
   entry,
   view,
@@ -96,6 +141,8 @@ export default function EntryItem({
   onToggleSelect,
 }: EntryItemProps) {
   const isFolder = entry.kind === "folder";
+  const isVideo = entry.kind === "video";
+  const mediaLabel = isVideo ? "video" : "image";
 
   // A hold only starts a selection while selection is off; once it is on,
   // plain taps toggle.
@@ -150,7 +197,7 @@ export default function EntryItem({
           }}
           disabled={busy}
           aria-label={`Delete ${entry.name}`}
-          title={isFolder ? "Delete folder" : "Delete image"}
+          title={isFolder ? "Delete folder" : `Delete ${mediaLabel}`}
           className="grid h-9 w-9 place-items-center rounded-lg bg-black/45 text-white/90 backdrop-blur transition hover:bg-danger hover:text-white disabled:opacity-40"
         >
           <TrashIcon width={17} height={17} />
@@ -171,7 +218,11 @@ export default function EntryItem({
           }
           {...hold.bind}
           aria-label={
-            selectable ? `Select ${entry.name}` : isFolder ? `Open folder ${entry.name}` : `Open image ${entry.name}`
+            selectable
+              ? `Select ${entry.name}`
+              : isFolder
+                ? `Open folder ${entry.name}`
+                : `Open ${mediaLabel} ${entry.name}`
           }
           className={`flex min-h-16 w-full items-center gap-3 rounded-xl border border-transparent px-2 py-2 text-left transition hover:border-line/60 hover:bg-surface-raised ${selectedRing}`}
         >
@@ -191,12 +242,10 @@ export default function EntryItem({
                 <FolderIcon className="text-accent" width={22} height={22} />
               )
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={endpoints.thumb(entry.token, 128)}
-                alt=""
-                loading="lazy"
-                decoding="async"
+              <MediaThumb
+                entry={entry}
+                width={128}
+                iconSize={22}
                 className="h-full w-full object-cover"
               />
             )}
@@ -210,8 +259,8 @@ export default function EntryItem({
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1">
-                  <ImageIcon width={12} height={12} />
-                  {(entry.extension ?? "image").replace(".", "").toUpperCase()}
+                  {isVideo ? <VideoIcon width={12} height={12} /> : <ImageIcon width={12} height={12} />}
+                  {(entry.extension ?? mediaLabel).replace(".", "").toUpperCase()}
                 </span>
               )}
               <span>{formatDate(entry.modifiedAt)}</span>
@@ -239,7 +288,11 @@ export default function EntryItem({
         }
         {...hold.bind}
         aria-label={
-          selectable ? `Select ${entry.name}` : isFolder ? `Open folder ${entry.name}` : `Open image ${entry.name}`
+          selectable
+            ? `Select ${entry.name}`
+            : isFolder
+              ? `Open folder ${entry.name}`
+              : `Open ${mediaLabel} ${entry.name}`
         }
         className={`block w-full overflow-hidden rounded-xl border border-line/50 bg-surface-raised transition hover:border-accent/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${selectedRing}`}
       >
@@ -261,14 +314,24 @@ export default function EntryItem({
               </span>
             </>
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={endpoints.thumb(entry.token, 400)}
-              alt={entry.name}
-              loading="lazy"
-              decoding="async"
-              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-            />
+            <>
+              <MediaThumb
+                entry={entry}
+                width={400}
+                iconSize={40}
+                className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+              />
+              {isVideo ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 grid place-items-center"
+                >
+                  <span className="grid h-11 w-11 place-items-center rounded-full bg-black/55 text-white/95 backdrop-blur transition duration-300 group-hover:bg-accent-strong group-hover:text-white">
+                    <PlayIcon width={20} height={20} className="translate-x-[1px]" />
+                  </span>
+                </span>
+              ) : null}
+            </>
           )}
           {selectable ? (
             <span className="absolute left-1.5 top-1.5 drop-shadow-[0_1px_4px_rgba(0,0,0,0.7)]">{badge}</span>

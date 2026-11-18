@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { assertWritable, errorResponse, noStoreHeaders, readJsonBody } from "@/lib/api";
 import { PathError, resolveToken, resolveTokenLoose } from "@/lib/fs/safe-path";
-import { countChildren, deleteFolderTree, deleteImageFile } from "@/lib/fs/gallery";
-import { mimeFor, isImageFile } from "@/lib/config";
+import { countChildren, deleteFolderTree, deleteMediaFile } from "@/lib/fs/gallery";
+import { isVideoFile, mimeFor } from "@/lib/config";
 import { removeFoldersUnder } from "@/lib/db";
 import { purgeCacheFor } from "@/lib/thumbs";
 import type { EntryKind } from "@/lib/types";
@@ -28,20 +28,21 @@ export async function GET(request: Request) {
           name: path.basename(target) || target,
           modifiedAt: stats.mtimeMs,
           counts,
-          empty: counts.folders + counts.images + counts.other === 0,
+          empty: counts.folders + counts.images + counts.videos + counts.other === 0,
         },
         { headers: noStoreHeaders() },
       );
     }
 
+    const isVideo = isVideoFile(target);
     return NextResponse.json(
       {
-        kind: "image" as EntryKind,
+        kind: isVideo ? ("video" as EntryKind) : ("image" as EntryKind),
         name: path.basename(target),
         modifiedAt: stats.mtimeMs,
         sizeBytes: stats.size,
         mime: mimeFor(target),
-        isImage: isImageFile(target),
+        isImage: !isVideo,
       },
       { headers: noStoreHeaders() },
     );
@@ -72,7 +73,7 @@ interface DeleteItemResult {
 const MAX_BATCH = 500;
 
 /**
- * Delete pictures and folders (with their contents), one at a time or in bulk.
+ * Delete pictures, videos and folders (with their contents), one at a time or in bulk.
  * The UI always asks for confirmation; the server keeps its own guard rails
  * (allowed roots, never the gallery root) and applies them per item.
  */
@@ -110,7 +111,7 @@ export async function DELETE(request: Request) {
         const stats = fs.statSync(target);
         if (stats.isDirectory()) {
           if (body.kind && body.kind !== "folder") {
-            throw new PathError("Path is a folder, not an image", 400);
+            throw new PathError("Path is a folder, not a picture or video", 400);
           }
           try {
             await deleteFolderTree(target);
@@ -122,14 +123,17 @@ export async function DELETE(request: Request) {
           removedDirs.push(target);
           results.push({ token, ok: true, kind: "folder", removedLibraryEntries: removedLibraryRows });
         } else {
-          if (body.kind && body.kind !== "image") throw new PathError("Path is an image", 400);
+          // The client sends the kind it listed; a picture and a video are
+          // deleted the same way, so only "folder" is a real contradiction.
+          if (body.kind === "folder") throw new PathError("Path is a file, not a folder", 400);
+          const kind: EntryKind = isVideoFile(target) ? "video" : "image";
           try {
-            await deleteImageFile(target);
+            await deleteMediaFile(target);
           } catch (deleteError) {
             throw fileSystemError(deleteError);
           }
           purgeCacheFor(target);
-          results.push({ token, ok: true, kind: "image" });
+          results.push({ token, ok: true, kind });
         }
       } catch (itemError) {
         const mapped = fileSystemError(itemError);

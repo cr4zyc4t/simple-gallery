@@ -1,7 +1,7 @@
 export type SortKey = "name" | "date";
 export type SortDir = "asc" | "desc";
 export type ViewMode = "grid" | "list";
-export type EntryKind = "folder" | "image";
+export type EntryKind = "folder" | "image" | "video";
 
 export interface GalleryEntry {
   kind: EntryKind;
@@ -11,7 +11,7 @@ export interface GalleryEntry {
   modifiedAt: number | null;
   sizeBytes: number | null;
   extension: string | null;
-  /** For folders: thumbnail of the first picture inside, when there is one. */
+  /** For folders: thumbnail of the first picture or video inside, when there is one. */
   coverToken: string | null;
 }
 
@@ -29,7 +29,7 @@ export interface FolderInfo {
 export interface ListingResponse {
   folder: FolderInfo;
   entries: GalleryEntry[];
-  counts: { folders: number; images: number };
+  counts: { folders: number; images: number; videos: number };
   readOnly: boolean;
 }
 

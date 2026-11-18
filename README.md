@@ -1,9 +1,9 @@
 # Simple Gallery
 
-A self-hosted image browser for folders that live on the server. Next.js (App
-Router) + Tailwind CSS v4 on the front, Drizzle ORM + SQLite for the library,
-sharp for thumbnails, Docker for deployment. No accounts, no upload queue — it
-shows what is already on disk.
+A self-hosted image and video browser for folders that live on the server. Next.js
+(App Router) + Tailwind CSS v4 on the front, Drizzle ORM + SQLite for the
+library, sharp for thumbnails, ffmpeg for video posters, Docker for deployment.
+No accounts, no upload queue — it shows what is already on disk.
 
 ![Simple Gallery](public/icon.svg)
 
@@ -13,23 +13,35 @@ shows what is already on disk.
 | --- | --- |
 | Lists the default folder on start | `GALLERY_ROOT` (default `./media`), server-rendered first paint |
 | Add a folder by browsing **or** by typing a path | Library panel → **Add folder** (two tabs) |
-| Listing shows only folders and images, folders first | `GET /api/listing` |
+| Listing shows folders, pictures and videos, folders first | `GET /api/listing` |
 | Grid ⇄ list toggle, order by name or date, asc/desc | Toolbar; choices saved in a cookie and applied by the server on the first paint |
-| Small thumbnails | `GET /api/thumb` — sharp → WebP, cached on disk |
-| Click a thumbnail → carousel, slide between images in the folder | `Lightbox` (touch swipe, mouse drag, ← →, Home/End, Esc) |
+| Small thumbnails, including a poster frame for every video | `GET /api/thumb` — sharp → WebP (ffmpeg picks the frame), cached on disk |
+| Click a picture → carousel, slide between pictures in the folder | `Lightbox` (touch swipe, mouse drag, ← →, Home/End, Esc) |
+| Click a video → its own player, with the browser's native controls | `VideoPlayer` (no paging, no zoom — scrubbing and volume stay native) |
 | Zoom a picture | pinch, double-tap, `+`/`-`/`0`, ctrl+wheel; drag to pan while zoomed |
-| Download an image, never a folder | `GET /api/download` rejects directories |
-| Delete an image with confirmation | confirm dialog on every image delete |
+| Download a picture or video, never a folder | `GET /api/download` rejects directories |
+| Delete a picture or video with confirmation | confirm dialog on every media delete |
 | Delete a folder, confirm only when it is not empty | empty folders go straight away, non-empty ones ask first |
 | Delete many items at once | toolbar **Select** → tap / hold / Shift+click → **Delete** (`DELETE /api/entry` with `paths[]`) |
 | Responsive on desktop / tablet / mobile | sidebar on ≥1024px, drawer below; 2→8 column grid |
 | Controls stay reachable while scrolling | only the control bar is pinned; the header, folder name and counts scroll away, and a floating **back to top** button brings them back |
-| Back button works like a native app | the folder and the open picture live in the URL (`?d=`, `?i=`), so every screen is shareable |
-| Deploy with Docker | multi-stage `Dockerfile` + `docker-compose.yml` |
+| Back button works like a native app | the folder and the open picture or video live in the URL (`?d=`, `?i=`), so every screen is shareable |
+| Deploy with Docker | multi-stage `Dockerfile` (includes ffmpeg for video posters) + `docker-compose.yml` |
 | Database | Drizzle ORM + better-sqlite3, table `folders` (the user's library list) |
 
 The filesystem is the source of truth for media. SQLite only stores the folders
 you added to the library, so deleting a library entry never touches files.
+
+**Media types.**
+
+* Pictures — `.jpg .jpeg .jpe .png .gif .webp .avif .bmp .svg .svgz .ico .tif
+  .tiff .heic .heif`. Animated GIFs (and animated WebP) keep their animation in
+  the grid thumbnail; past a 25 MP decoded budget the first frame is used instead
+  so a huge animation cannot exhaust the server's memory.
+* Videos that play in the viewer — `.mp4 .m4v .mov .webm`.
+* Videos that are listed, thumbnailed and downloadable but the viewer may refuse —
+  `.mkv .avi .mpg .mpeg .m2ts`. Their poster still works, because the frame is
+  decoded server side.
 
 ## Quick start (development)
 
@@ -79,6 +91,8 @@ tree, e.g. `- /mnt/nas/photos:/data/gallery`.
 | `GALLERY_CACHE_DIR` | `<db dir>/thumbs` | Where resized thumbnails are cached. |
 | `GALLERY_READ_ONLY` | `0` | `1` hides and refuses every delete. |
 | `GALLERY_MAX_PREVIEW_BYTES` | `64 MiB` | Larger files are streamed instead of resized. |
+| `GALLERY_FFMPEG_PATH` | `ffmpeg` | Command used to pull a poster frame out of a video. Optional — without it the video tiles fall back to a placeholder. |
+| `GALLERY_FFMPEG_TIMEOUT_MS` | `15000` | Wall-clock limit for one poster extraction. |
 | `PORT` | `3000` | HTTP port. |
 
 **Allow-listing paths.** Browsing outside the gallery root is opt-in:
@@ -117,13 +131,13 @@ folders(id, name, path UNIQUE, parent_path, is_default, created_at)
 | Method & path | Purpose |
 | --- | --- |
 | `GET /api/state` | default folder, allowed roots, read-only flag |
-| `GET /api/listing?path=&sort=name\|date&dir=asc\|desc` | folders first, then images, with thumbnails' tokens |
+| `GET /api/listing?path=&sort=name\|date&dir=asc\|desc` | folders first, then pictures and videos, with thumbnails' tokens |
 | `GET /api/browse?path=` | sub-folders for the browser dialog (no token → allowed roots) |
 | `GET/POST /api/library`, `DELETE /api/library/:id` | the saved folder list |
-| `GET /api/entry?path=` | metadata; tells whether a folder is empty |
+| `GET /api/entry?path=` | metadata (`kind` is `folder`, `image` or `video`); tells whether a folder is empty |
 | `DELETE /api/entry` | `{path, kind}` for one item, or `{paths: […]}` for up to 500 — every token is validated before anything is deleted, each outcome is reported in `results[]` |
-| `GET /api/thumb?path=&w=` | WebP thumbnail (128–1280 px), disk cached |
-| `GET /api/image?path=` | full image, `Range` + `ETag` support |
+| `GET /api/thumb?path=&w=` | WebP thumbnail (128–1280 px), disk cached; for a video this is its poster frame, `501` when ffmpeg cannot produce one |
+| `GET /api/image?path=` | full picture or video, `Range` + `ETag` support (seeking works) |
 | `GET /api/download?path=` | attachment download; folders are refused |
 
 `path` values are base64url tokens of the resolved absolute path. They keep
@@ -136,6 +150,19 @@ they are **not** a capability or a secret.
   for list rows), cached as `<sha1(path|mtime|size|width)>.webp`. Deleting an
   entry purges its cache rows through `thumbs/index.jsonl`. If sharp cannot load
   (unusual platform), routes fall back to the original bytes.
+* **Video posters** — ffmpeg decodes one frame (`-ss 0.5`, falling back to `0`
+  when a clip fades in from black) as JPEG on stdout, then sharp produces the same
+  cached WebP a picture thumbnail uses, under a `video|`-prefixed cache key, so
+  the grid treats both identically. At most two decodes run at a time, a decode
+  is killed after `GALLERY_FFMPEG_TIMEOUT_MS`, and a missing ffmpeg is noticed
+  once instead of on every tile — the route then answers `501` and the tile draws
+  a video glyph instead of a broken image. This is also why a `.mkv` gets a
+  poster even in a browser that cannot play it.
+* **Video player** — deliberately separate from the carousel: `VideoPlayer` shows
+  one file with the browser's native controls, the cached WebP as `poster`, and
+  the download link. No paging, no swipe, no zoom, so scrubbing, volume and
+  fullscreen behave the way a video app should; `Esc` (or Back) closes it, and
+  `?i=` addresses a video exactly like it addresses a picture.
 * **Carousel** — one track, `translate3d` per page, pointer events with velocity
   detection; only the previous/current/next `<img>` are mounted, so a folder of
   500 photos stays light. Edge arrows are hidden below `sm` so they never eat a
@@ -192,8 +219,8 @@ they are **not** a capability or a secret.
   under it instead of showing through.
 * **Sorting** — `Intl.Collator({numeric:true})`, so `IMG_2.jpg` sorts before
   `IMG_10.jpg`; date mode falls back to the name for identical timestamps.
-* Hidden entries (`.`, `~$`, `@eaDir`, `.DS_Store`, `Thumbs.db`, …) and non-image
-  files never appear in the listing.
+* Hidden entries (`.`, `~$`, `@eaDir`, `.DS_Store`, `Thumbs.db`, …) and files
+  that are neither pictures nor videos never appear in the listing.
 
 ## Scripts
 
@@ -201,10 +228,12 @@ they are **not** a capability or a secret.
 | --- | --- |
 | `npm run dev` / `build` / `start` | Next.js development, build, production server |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run sample:images` | generate demo pictures in `./media` |
+| `npm run sample:images` | generate demo pictures (and a demo clip, when ffmpeg is available) in `./media` |
 | `npm run db:generate` / `db:migrate` / `db:studio` | drizzle-kit / migration helpers |
 
 ## Browser support
 
 Evergreen Chrome, Edge, Firefox, Safari (iOS 15+, Android Chrome). WebP
 thumbnails, CSS grid, `dvh` units, pointer events; touch targets are ≥40 px.
+Video playback is whatever the browser can decode — typically H.264/AAC MP4 and
+VP8/VP9 WebM; anything else still lists, thumbnails and downloads.

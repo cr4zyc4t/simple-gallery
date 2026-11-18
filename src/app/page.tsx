@@ -29,7 +29,7 @@ const EMPTY_LISTING = (readOnly: boolean): ListingResponse => ({
     inLibrary: true,
   },
   entries: [],
-  counts: { folders: 0, images: 0 },
+  counts: { folders: 0, images: 0, videos: 0 },
   readOnly,
 });
 
@@ -90,7 +90,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   // Only trust the picture token when it belongs to the folder we managed to show.
   const image =
-    screen.image && initial.entries.some((entry) => entry.kind === "image" && entry.token === screen.image)
+    screen.image && initial.entries.some((entry) => entry.kind !== "folder" && entry.token === screen.image)
       ? screen.image
       : null;
 

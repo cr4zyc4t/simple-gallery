@@ -7,6 +7,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import sharp from "sharp";
 
 const root = path.resolve(process.cwd(), process.argv[2] ?? "media");
@@ -45,6 +46,53 @@ async function writeImage(dir, name, buffer) {
   console.log("wrote", path.relative(process.cwd(), target));
 }
 
+/**
+ * A four second clip with a tone, so the video path can be tried on a fresh
+ * checkout. Needs ffmpeg — skipped with a note when it is not installed.
+ */
+function writeClip(target) {
+  const ffmpeg = process.env.GALLERY_FFMPEG_PATH || "ffmpeg";
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    execFileSync(
+      ffmpeg,
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=640x360:rate=24:duration=4",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=4",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-crf",
+        "32",
+        "-c:a",
+        "aac",
+        "-shortest",
+        "-movflags",
+        "+faststart",
+        target,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    console.log("wrote", path.relative(process.cwd(), target));
+  } catch (error) {
+    console.log(
+      `skipped the demo clip: cannot run ${ffmpeg} (${error.code ?? error.message}). ` +
+        "Install ffmpeg or set GALLERY_FFMPEG_PATH.",
+    );
+  }
+}
+
 async function main() {
   const wallpaper = path.join(root, "wallpapers");
   const travel = path.join(root, "travel", "coast");
@@ -73,6 +121,8 @@ async function main() {
     .webp({ quality: 75 })
     .toBuffer();
   await writeImage(root, "root-image.webp", flat);
+
+  writeClip(path.join(travel, "demo-clip.mp4"));
 
   console.log(`\nDemo library ready in ${root}`);
 }

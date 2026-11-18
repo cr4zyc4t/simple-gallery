@@ -12,7 +12,7 @@ import { CACHE_DIR, MAX_PREVIEW_BYTES } from "@/lib/config";
 type SharpFactory = typeof import("sharp");
 let sharpPromise: Promise<SharpFactory | null> | null = null;
 
-function loadSharp(): Promise<SharpFactory | null> {
+export function loadSharp(): Promise<SharpFactory | null> {
   sharpPromise ??= import("sharp")
     .then((mod) => {
       const candidate = mod as unknown as { default?: SharpFactory };
@@ -30,14 +30,46 @@ function loadSharp(): Promise<SharpFactory | null> {
 export const THUMB_QUALITY = 74;
 const INDEX_FILE = "index.jsonl";
 
-function hashKey(input: string): string {
+/** Decoded-pixel budget (width × height × frames) for an animated thumbnail. */
+const MAX_ANIMATED_PIXELS = 25_000_000;
+
+export function hashKey(input: string): string {
   return crypto.createHash("sha1").update(input).digest("hex");
 }
 
-function clampWidth(requested: number): number {
+export function clampWidth(requested: number): number {
   const width = Number.isFinite(requested) ? Math.round(requested) : 256;
   if (width <= 0) return 256;
   return Math.min(Math.max(width, 64), 1280);
+}
+
+/** Read a cached WebP for a key, or null on a miss. */
+export async function readCached(key: string): Promise<Buffer | null> {
+  try {
+    return await fsp.readFile(path.join(CACHE_DIR, `${key}.webp`));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Store a generated WebP under its key and remember which file it came from, so
+ * `purgeCacheFor` can drop it again. Concurrent writers are handled by writing a
+ * temp file and renaming it into place.
+ */
+export async function writeCached(key: string, data: Buffer, source: string): Promise<void> {
+  await fsp.mkdir(CACHE_DIR, { recursive: true });
+  const cacheFile = path.join(CACHE_DIR, `${key}.webp`);
+  const temp = `${cacheFile}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  await fsp.writeFile(temp, data);
+  try {
+    await fsp.rename(temp, cacheFile);
+  } catch {
+    await fsp.rm(temp, { force: true });
+  }
+  await fsp
+    .appendFile(path.join(CACHE_DIR, INDEX_FILE), `${key}\t${source}\n`, "utf8")
+    .catch(() => undefined);
 }
 
 interface ThumbResult {
@@ -65,33 +97,25 @@ export async function getThumbnail(
   if (!sharp) return readOriginal(filePath);
 
   const key = hashKey(`${filePath}|${Math.round(stats.mtimeMs)}|${stats.size}|${width}|q${THUMB_QUALITY}`);
-  const cacheFile = path.join(CACHE_DIR, `${key}.webp`);
+
+  const cached = await readCached(key);
+  if (cached) return { data: cached, mime: "image/webp", passthrough: false };
 
   try {
-    const cached = await fsp.readFile(cacheFile);
-    return { data: cached, mime: "image/webp", passthrough: false };
-  } catch {
-    // cache miss — generated below
-  }
+    // Animated sources (GIF, animated WebP) stay animated in the thumbnail, but
+    // vips decodes every frame at full size, so a huge animation would cost
+    // more memory than a thumbnail is worth — those get their first frame only.
+    const meta = await sharp(filePath, { animated: true, failOn: "none" }).metadata();
+    const pages = Math.max(meta.pages ?? 1, 1);
+    const animated = pages > 1 && (meta.width ?? 0) * (meta.height ?? 0) * pages <= MAX_ANIMATED_PIXELS;
 
-  try {
-    const data = await sharp(filePath, { animated: true, failOn: "none" })
+    const data = await sharp(filePath, { animated, failOn: "none" })
       .rotate()
       .resize({ width, height: width, fit: "inside", withoutEnlargement: true })
       .webp({ quality: THUMB_QUALITY, effort: 5 })
       .toBuffer();
 
-    await fsp.mkdir(CACHE_DIR, { recursive: true });
-    const temp = `${cacheFile}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-    await fsp.writeFile(temp, data);
-    try {
-      await fsp.rename(temp, cacheFile);
-    } catch {
-      await fsp.rm(temp, { force: true });
-    }
-    await fsp
-      .appendFile(path.join(CACHE_DIR, INDEX_FILE), `${key}\t${filePath}\n`, "utf8")
-      .catch(() => undefined);
+    await writeCached(key, data, filePath);
     return { data, mime: "image/webp", passthrough: false };
   } catch (error) {
     console.warn(`[gallery] thumbnail failed for ${filePath}`, (error as Error).message);

@@ -38,10 +38,17 @@ ENV NODE_ENV=production \
     GALLERY_DB_PATH=/data/gallery.db \
     GALLERY_CACHE_DIR=/data/thumbs
 
+# ffmpeg pulls poster frames out of videos for the grid. It is optional at
+# runtime (the UI falls back to a video placeholder), but without it here the
+# Docker image would never show a video thumbnail.
 RUN groupadd --system --gid 1001 nodejs \
   && useradd --system --uid 1001 --gid nodejs --home /app nextjs \
   && mkdir -p /data/gallery /data/thumbs \
   && chown -R nextjs:nodejs /data /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static

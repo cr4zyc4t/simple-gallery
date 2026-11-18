@@ -13,7 +13,7 @@ import type { FolderInfo, SortDir, SortKey, ViewMode } from "@/lib/types";
 
 interface GalleryToolbarProps {
   folder: FolderInfo;
-  counts: { folders: number; images: number };
+  counts: { folders: number; images: number; videos: number };
   view: ViewMode;
   sort: SortKey;
   dir: SortDir;
@@ -51,6 +51,13 @@ export default function GalleryToolbar({
   const dirLabel =
     sort === "name" ? (dir === "asc" ? "A → Z" : "Z → A") : dir === "asc" ? "Oldest first" : "Newest first";
 
+  // An empty video count is left out rather than shown as "0 videos".
+  const countParts = [
+    `${counts.folders} folder${counts.folders === 1 ? "" : "s"}`,
+    `${counts.images} image${counts.images === 1 ? "" : "s"}`,
+  ];
+  if (counts.videos > 0) countParts.push(`${counts.videos} video${counts.videos === 1 ? "" : "s"}`);
+
   return (
     <>
       {/* Where you are and what is in it — this part scrolls away. */}
@@ -59,8 +66,7 @@ export default function GalleryToolbar({
           {folder.name}
         </p>
         <p className="shrink-0 text-xs text-ink-muted">
-          {counts.folders} folder{counts.folders === 1 ? "" : "s"} · {counts.images} image
-          {counts.images === 1 ? "" : "s"}
+          {countParts.join(" · ")}
           {loading ? " · refreshing" : ""}
         </p>
       </div>

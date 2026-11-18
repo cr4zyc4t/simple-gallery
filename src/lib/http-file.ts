@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import path from "node:path";
 
-/** Static-file response helper with Range + ETag support (video-free, simple). */
+/** Static-file response helper with Range + ETag support, used for pictures and video. */
 
 interface FileResponseOptions {
   mime: string;
@@ -52,8 +52,11 @@ export async function fileResponse(
   const match = rangeHeader ? /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim()) : null;
 
   if (match) {
-    let start = match[1] ? Number.parseInt(match[1], 10) : 0;
-    let end = match[2] ? Number.parseInt(match[2], 10) : size - 1;
+    // `bytes=0-` and `bytes=123-456` are what players ask for; `bytes=-500`
+    // means the last 500 bytes, which only a suffix range can express.
+    const suffix = !match[1] && Boolean(match[2]);
+    let start = suffix ? Math.max(size - Number.parseInt(match[2], 10), 0) : match[1] ? Number.parseInt(match[1], 10) : 0;
+    let end = suffix ? size - 1 : match[2] ? Number.parseInt(match[2], 10) : size - 1;
     if (Number.isNaN(start)) start = 0;
     if (Number.isNaN(end)) end = size - 1;
     if (size === 0 || start >= size || start > end) {

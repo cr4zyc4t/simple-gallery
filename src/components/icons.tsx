@@ -58,6 +58,20 @@ export const ImageIcon = (props: IconProps) => (
   </Base>
 );
 
+export const VideoIcon = (props: IconProps) => (
+  <Base {...props}>
+    <rect x="3" y="6" width="12.5" height="12" rx="2" />
+    <path d="M15.5 10.5 21 7.5v9l-5.5-3z" />
+  </Base>
+);
+
+/** Filled triangle: the "this is a video" mark on tiles and in the viewer. */
+export const PlayIcon = (props: IconProps) => (
+  <Base {...props}>
+    <path d="M8 5.5 19 12 8 18.5z" fill="currentColor" stroke="none" />
+  </Base>
+);
+
 export const TrashIcon = (props: IconProps) => (
   <Base {...props}>
     <path d="M4 7h16M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7M6.5 7l.8 12A1.5 1.5 0 0 0 8.8 20.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12M10.5 11v5.5M13.5 11v5.5" />
