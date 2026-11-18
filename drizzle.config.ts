@@ -11,10 +11,10 @@ import { defineConfig } from "drizzle-kit";
  * fresh container works without a separate migrate step.
  */
 export default defineConfig({
-  dialect: "sqlite",
-  schema: "./src/lib/db/schema.ts",
-  out: "./drizzle",
-  dbCredentials: {
-    url: process.env.GALLERY_DB_PATH ?? "./data/gallery.db",
-  },
+	dialect: "sqlite",
+	schema: "./src/lib/db/schema.ts",
+	out: "./drizzle",
+	dbCredentials: {
+		url: process.env.GALLERY_DB_PATH ?? "./data/gallery.db",
+	},
 });

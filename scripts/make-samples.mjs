@@ -13,23 +13,23 @@ import sharp from "sharp";
 const root = path.resolve(process.cwd(), process.argv[2] ?? "media");
 
 const palettes = [
-  ["#0f2027", "#2c5364", "sunset-lake"],
-  ["#42275a", "#734b6d", "dusk-hills"],
-  ["#1f4037", "#99f2c8", "moss"],
-  ["#3a1c71", "#d76d77", "bloom"],
-  ["#003973", "#e5e5b4", "dunes"],
-  ["#232526", "#414345", "graphite"],
+	["#0f2027", "#2c5364", "sunset-lake"],
+	["#42275a", "#734b6d", "dusk-hills"],
+	["#1f4037", "#99f2c8", "moss"],
+	["#3a1c71", "#d76d77", "bloom"],
+	["#003973", "#e5e5b4", "dunes"],
+	["#232526", "#414345", "graphite"],
 ];
 
 function svg(from, to, label, seed) {
-  const circles = Array.from({ length: 7 }, (_, index) => {
-    const cx = ((seed * 37 + index * 91) % 100) + "%";
-    const cy = ((seed * 53 + index * 47) % 100) + "%";
-    const r = 10 + ((seed + index * 13) % 30);
-    const opacity = 0.08 + ((index * 7) % 20) / 100;
-    return `<circle cx="${cx}" cy="${cy}" r="${r}%" fill="white" opacity="${opacity.toFixed(2)}"/>`;
-  }).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+	const circles = Array.from({ length: 7 }, (_, index) => {
+		const cx = ((seed * 37 + index * 91) % 100) + "%";
+		const cy = ((seed * 53 + index * 47) % 100) + "%";
+		const r = 10 + ((seed + index * 13) % 30);
+		const opacity = 0.08 + ((index * 7) % 20) / 100;
+		return `<circle cx="${cx}" cy="${cy}" r="${r}%" fill="white" opacity="${opacity.toFixed(2)}"/>`;
+	}).join("");
+	return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
   <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="${from}"/><stop offset="100%" stop-color="${to}"/>
   </linearGradient></defs>
@@ -40,10 +40,10 @@ function svg(from, to, label, seed) {
 }
 
 async function writeImage(dir, name, buffer) {
-  fs.mkdirSync(dir, { recursive: true });
-  const target = path.join(dir, name);
-  fs.writeFileSync(target, buffer);
-  console.log("wrote", path.relative(process.cwd(), target));
+	fs.mkdirSync(dir, { recursive: true });
+	const target = path.join(dir, name);
+	fs.writeFileSync(target, buffer);
+	console.log("wrote", path.relative(process.cwd(), target));
 }
 
 /**
@@ -51,80 +51,80 @@ async function writeImage(dir, name, buffer) {
  * checkout. Needs ffmpeg — skipped with a note when it is not installed.
  */
 function writeClip(target) {
-  const ffmpeg = process.env.GALLERY_FFMPEG_PATH || "ffmpeg";
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  try {
-    execFileSync(
-      ffmpeg,
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        "testsrc2=size=640x360:rate=24:duration=4",
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=440:duration=4",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-crf",
-        "32",
-        "-c:a",
-        "aac",
-        "-shortest",
-        "-movflags",
-        "+faststart",
-        target,
-      ],
-      { stdio: ["ignore", "ignore", "pipe"] },
-    );
-    console.log("wrote", path.relative(process.cwd(), target));
-  } catch (error) {
-    console.log(
-      `skipped the demo clip: cannot run ${ffmpeg} (${error.code ?? error.message}). ` +
-        "Install ffmpeg or set GALLERY_FFMPEG_PATH.",
-    );
-  }
+	const ffmpeg = process.env.GALLERY_FFMPEG_PATH || "ffmpeg";
+	fs.mkdirSync(path.dirname(target), { recursive: true });
+	try {
+		execFileSync(
+			ffmpeg,
+			[
+				"-hide_banner",
+				"-loglevel",
+				"error",
+				"-y",
+				"-f",
+				"lavfi",
+				"-i",
+				"testsrc2=size=640x360:rate=24:duration=4",
+				"-f",
+				"lavfi",
+				"-i",
+				"sine=frequency=440:duration=4",
+				"-c:v",
+				"libx264",
+				"-pix_fmt",
+				"yuv420p",
+				"-crf",
+				"32",
+				"-c:a",
+				"aac",
+				"-shortest",
+				"-movflags",
+				"+faststart",
+				target,
+			],
+			{ stdio: ["ignore", "ignore", "pipe"] }
+		);
+		console.log("wrote", path.relative(process.cwd(), target));
+	} catch (error) {
+		console.log(
+			`skipped the demo clip: cannot run ${ffmpeg} (${error.code ?? error.message}). ` +
+				"Install ffmpeg or set GALLERY_FFMPEG_PATH."
+		);
+	}
 }
 
 async function main() {
-  const wallpaper = path.join(root, "wallpapers");
-  const travel = path.join(root, "travel", "coast");
-  fs.mkdirSync(travel, { recursive: true });
+	const wallpaper = path.join(root, "wallpapers");
+	const travel = path.join(root, "travel", "coast");
+	fs.mkdirSync(travel, { recursive: true });
 
-  let seed = 1;
-  for (const [from, to, label] of palettes) {
-    const base = svg(from, to, label, seed++);
-    const png = await sharp(Buffer.from(base)).png({ quality: 80 }).toBuffer();
-    await writeImage(wallpaper, `${label}.png`, png);
-  }
+	let seed = 1;
+	for (const [from, to, label] of palettes) {
+		const base = svg(from, to, label, seed++);
+		const png = await sharp(Buffer.from(base)).png({ quality: 80 }).toBuffer();
+		await writeImage(wallpaper, `${label}.png`, png);
+	}
 
-  for (let index = 1; index <= 4; index += 1) {
-    const [from, to] = palettes[index % palettes.length];
-    const base = svg(to, from, `coast-${index}`, index + 40);
-    const jpg = await sharp(Buffer.from(base)).jpeg({ quality: 78 }).toBuffer();
-    await writeImage(travel, `coast-${String(index).padStart(2, "0")}.jpg`, jpg);
-  }
+	for (let index = 1; index <= 4; index += 1) {
+		const [from, to] = palettes[index % palettes.length];
+		const base = svg(to, from, `coast-${index}`, index + 40);
+		const jpg = await sharp(Buffer.from(base)).jpeg({ quality: 78 }).toBuffer();
+		await writeImage(travel, `coast-${String(index).padStart(2, "0")}.jpg`, jpg);
+	}
 
-  const gif = await sharp(Buffer.from(svg("#136a8a", "#267871", "animated", 99)))
-    .gif({ colors: 64 })
-    .toBuffer();
-  await writeImage(root, "welcome.gif", gif);
+	const gif = await sharp(Buffer.from(svg("#136a8a", "#267871", "animated", 99)))
+		.gif({ colors: 64 })
+		.toBuffer();
+	await writeImage(root, "welcome.gif", gif);
 
-  const flat = await sharp(Buffer.from(svg("#5f2c82", "#49a09d", "root-image", 7)))
-    .webp({ quality: 75 })
-    .toBuffer();
-  await writeImage(root, "root-image.webp", flat);
+	const flat = await sharp(Buffer.from(svg("#5f2c82", "#49a09d", "root-image", 7)))
+		.webp({ quality: 75 })
+		.toBuffer();
+	await writeImage(root, "root-image.webp", flat);
 
-  writeClip(path.join(travel, "demo-clip.mp4"));
+	writeClip(path.join(travel, "demo-clip.mp4"));
 
-  console.log(`\nDemo library ready in ${root}`);
+	console.log(`\nDemo library ready in ${root}`);
 }
 
 await main();

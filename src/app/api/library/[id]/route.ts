@@ -10,23 +10,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Remove a folder from the library. Files on disk are untouched. */
-export async function DELETE(
-  _request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  try {
-    const { id } = await context.params;
-    const numericId = Number(id);
-    if (!Number.isInteger(numericId) || numericId <= 0) throw new PathError("Invalid folder id");
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+	try {
+		const { id } = await context.params;
+		const numericId = Number(id);
+		if (!Number.isInteger(numericId) || numericId <= 0) throw new PathError("Invalid folder id");
 
-    const db = getDb();
-    const [row] = db.select().from(folders).where(eq(folders.id, numericId)).all();
-    if (!row) throw new PathError("Folder is not in the library", 404);
-    if (row.isDefault) throw new PathError("The default gallery folder cannot be removed", 400);
+		const db = getDb();
+		const [row] = db.select().from(folders).where(eq(folders.id, numericId)).all();
+		if (!row) throw new PathError("Folder is not in the library", 404);
+		if (row.isDefault) throw new PathError("The default gallery folder cannot be removed", 400);
 
-    removeFolderById(numericId);
-    return NextResponse.json({ removed: true, id: numericId }, { headers: noStoreHeaders() });
-  } catch (error) {
-    return errorResponse(error);
-  }
+		removeFolderById(numericId);
+		return NextResponse.json({ removed: true, id: numericId }, { headers: noStoreHeaders() });
+	} catch (error) {
+		return errorResponse(error);
+	}
 }

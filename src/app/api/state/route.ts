@@ -9,20 +9,20 @@ export const dynamic = "force-dynamic";
 
 /** Startup info used by the client: default folder + capabilities. */
 export async function GET() {
-  try {
-    ensureRootExists();
-    ensureDefaultFolder();
-    const info = folderInfo(GALLERY_ROOT, Boolean(findFolderByPath(GALLERY_ROOT)));
-    return NextResponse.json(
-      {
-        folder: info,
-        allowedRoots: ALLOWED_ROOTS,
-        readOnly: READ_ONLY,
-        canDelete: !READ_ONLY,
-      },
-      { headers: noStoreHeaders() },
-    );
-  } catch (error) {
-    return errorResponse(error);
-  }
+	try {
+		ensureRootExists();
+		ensureDefaultFolder();
+		const info = folderInfo(GALLERY_ROOT, Boolean(findFolderByPath(GALLERY_ROOT)));
+		return NextResponse.json(
+			{
+				folder: info,
+				allowedRoots: ALLOWED_ROOTS,
+				readOnly: READ_ONLY,
+				canDelete: !READ_ONLY,
+			},
+			{ headers: noStoreHeaders() }
+		);
+	} catch (error) {
+		return errorResponse(error);
+	}
 }

@@ -5,20 +5,20 @@ import type { FolderRow } from "@/lib/db/schema";
 import type { LibraryFolder } from "@/lib/types";
 
 export function toLibraryFolder(row: FolderRow): LibraryFolder {
-  let exists = false;
-  try {
-    exists = fs.statSync(row.path).isDirectory();
-  } catch {
-    exists = false;
-  }
-  return {
-    id: row.id,
-    name: row.name,
-    token: toToken(row.path),
-    isDefault: row.isDefault,
-    createdAt: row.createdAt instanceof Date ? row.createdAt.getTime() : Number(row.createdAt),
-    exists,
-  };
+	let exists = false;
+	try {
+		exists = fs.statSync(row.path).isDirectory();
+	} catch {
+		exists = false;
+	}
+	return {
+		id: row.id,
+		name: row.name,
+		token: toToken(row.path),
+		isDefault: row.isDefault,
+		createdAt: row.createdAt instanceof Date ? row.createdAt.getTime() : Number(row.createdAt),
+		exists,
+	};
 }
 
 /**
@@ -27,8 +27,8 @@ export function toLibraryFolder(row: FolderRow): LibraryFolder {
  * result is collapsed so `a/../b` cannot hop out of an allowed root.
  */
 export function normalizeTypedPath(input: string, root: string): string {
-  const trimmed = input.trim().replace(/^["']+|["']+$/g, "");
-  if (!trimmed) throw new Error("Enter a folder path");
-  const candidate = path.isAbsolute(trimmed) ? trimmed : path.resolve(root, trimmed);
-  return path.resolve(candidate);
+	const trimmed = input.trim().replace(/^["']+|["']+$/g, "");
+	if (!trimmed) throw new Error("Enter a folder path");
+	const candidate = path.isAbsolute(trimmed) ? trimmed : path.resolve(root, trimmed);
+	return path.resolve(candidate);
 }

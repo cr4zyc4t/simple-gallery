@@ -11,27 +11,27 @@ export const FOLDER_PARAM = "d";
 export const IMAGE_PARAM = "i";
 
 export interface Screen {
-  folder: string | null;
-  image: string | null;
+	folder: string | null;
+	image: string | null;
 }
 
 /** Parse a `location.search` (or a plain query string) into a screen. */
 export function readScreen(search: string | null | undefined): Screen {
-  const params = new URLSearchParams(search ?? "");
-  return {
-    folder: params.get(FOLDER_PARAM) || null,
-    image: params.get(IMAGE_PARAM) || null,
-  };
+	const params = new URLSearchParams(search ?? "");
+	return {
+		folder: params.get(FOLDER_PARAM) || null,
+		image: params.get(IMAGE_PARAM) || null,
+	};
 }
 
 export function searchFor(screen: Screen): string {
-  const params = new URLSearchParams();
-  if (screen.folder) params.set(FOLDER_PARAM, screen.folder);
-  if (screen.image) params.set(IMAGE_PARAM, screen.image);
-  const query = params.toString();
-  return query ? `?${query}` : "";
+	const params = new URLSearchParams();
+	if (screen.folder) params.set(FOLDER_PARAM, screen.folder);
+	if (screen.image) params.set(IMAGE_PARAM, screen.image);
+	const query = params.toString();
+	return query ? `?${query}` : "";
 }
 
 export function urlFor(screen: Screen, pathname = "/"): string {
-  return `${pathname}${searchFor(screen)}`;
+	return `${pathname}${searchFor(screen)}`;
 }

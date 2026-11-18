@@ -12,19 +12,19 @@ export const dynamic = "force-dynamic";
  * not downloadable.
  */
 export async function GET(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const target = resolveToken(url.searchParams.get("path"));
-    const stats = fs.statSync(target);
-    if (stats.isDirectory()) {
-      throw new PathError("Folders cannot be downloaded — open one instead", 400);
-    }
-    return fileResponse(request, target, {
-      mime: mimeFor(target),
-      downloadName: baseName(target),
-      maxAge: 0,
-    });
-  } catch (error) {
-    return errorResponse(error);
-  }
+	try {
+		const url = new URL(request.url);
+		const target = resolveToken(url.searchParams.get("path"));
+		const stats = fs.statSync(target);
+		if (stats.isDirectory()) {
+			throw new PathError("Folders cannot be downloaded — open one instead", 400);
+		}
+		return fileResponse(request, target, {
+			mime: mimeFor(target),
+			downloadName: baseName(target),
+			maxAge: 0,
+		});
+	} catch (error) {
+		return errorResponse(error);
+	}
 }

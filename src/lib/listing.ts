@@ -14,30 +14,30 @@ import type { ListingResponse, SortDir, SortKey } from "@/lib/types";
  * not a directory.
  */
 export async function buildListing(
-  token: string | null,
-  key: SortKey,
-  dir: SortDir,
+	token: string | null,
+	key: SortKey,
+	dir: SortDir
 ): Promise<ListingResponse> {
-  const folder = token ? resolveToken(token) : GALLERY_ROOT;
-  let stats: fs.Stats;
-  try {
-    stats = fs.statSync(folder);
-  } catch {
-    throw new PathError("Folder not found", 404);
-  }
-  if (!stats.isDirectory()) throw new PathError("Not a folder", 400);
+	const folder = token ? resolveToken(token) : GALLERY_ROOT;
+	let stats: fs.Stats;
+	try {
+		stats = fs.statSync(folder);
+	} catch {
+		throw new PathError("Folder not found", 404);
+	}
+	if (!stats.isDirectory()) throw new PathError("Not a folder", 400);
 
-  const entries = await listGalleryDir(folder, { key, dir });
-  const info = folderInfo(folder, Boolean(findFolderByPath(folder)));
+	const entries = await listGalleryDir(folder, { key, dir });
+	const info = folderInfo(folder, Boolean(findFolderByPath(folder)));
 
-  return {
-    folder: info,
-    entries,
-    counts: {
-      folders: entries.filter((entry) => entry.kind === "folder").length,
-      images: entries.filter((entry) => entry.kind === "image").length,
-      videos: entries.filter((entry) => entry.kind === "video").length,
-    },
-    readOnly: READ_ONLY,
-  };
+	return {
+		folder: info,
+		entries,
+		counts: {
+			folders: entries.filter((entry) => entry.kind === "folder").length,
+			images: entries.filter((entry) => entry.kind === "image").length,
+			videos: entries.filter((entry) => entry.kind === "video").length,
+		},
+		readOnly: READ_ONLY,
+	};
 }

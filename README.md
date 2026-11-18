@@ -231,6 +231,8 @@ they are **not** a capability or a secret.
 | --- | --- |
 | `npm run dev` / `build` / `start` | Next.js development, build, production server |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` / `lint:fix` | ESLint (flat config: `eslint.config.mjs`), formatting rules handed to Prettier |
+| `npm run format` / `format:check` | Prettier write / check (config in `.prettierrc.json`) |
 | `npm run sample:images` | generate demo pictures (and a demo clip, when ffmpeg is available) in `./media` |
 | `npm run db:generate` / `db:migrate` / `db:studio` | drizzle-kit / migration helpers |
 

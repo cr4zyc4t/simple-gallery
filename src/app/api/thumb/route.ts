@@ -12,44 +12,50 @@ export const dynamic = "force-dynamic";
 
 /** Resized, disk-cached thumbnail used by the grid/list. Falls back to the file. */
 export async function GET(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const target = resolveToken(url.searchParams.get("path"));
-    const stats = fs.statSync(target);
-    if (stats.isDirectory()) throw new PathError("Cannot thumbnail a folder", 400);
+	try {
+		const url = new URL(request.url);
+		const target = resolveToken(url.searchParams.get("path"));
+		const stats = fs.statSync(target);
+		if (stats.isDirectory()) throw new PathError("Cannot thumbnail a folder", 400);
 
-    const width = Number.parseInt(url.searchParams.get("w") ?? "256", 10);
-    const isVideo = isVideoFile(target);
-    const thumb = isVideo
-      ? await getVideoPoster(target, stats, width)
-      : await getThumbnail(target, stats, width);
+		const width = Number.parseInt(url.searchParams.get("w") ?? "256", 10);
+		const isVideo = isVideoFile(target);
+		const thumb = isVideo
+			? await getVideoPoster(target, stats, width)
+			: await getThumbnail(target, stats, width);
 
-    if (!thumb) {
-      // No ffmpeg / undecodable stream: the client draws a video placeholder.
-      throw new PathError("No poster available for this video", 501);
-    }
+		if (!thumb) {
+			// No ffmpeg / undecodable stream: the client draws a video placeholder.
+			throw new PathError("No poster available for this video", 501);
+		}
 
-    if (thumb.passthrough) {
-      return fileResponse(request, target, { mime: mimeFor(target), maxAge: 120 });
-    }
+		if (thumb.passthrough) {
+			return fileResponse(request, target, {
+				mime: mimeFor(target),
+				maxAge: 120,
+			});
+		}
 
-    const etag = `W/"thumb-${Math.round(stats.mtimeMs).toString(16)}-${stats.size}-${width}"`;
-    if (request.headers.get("if-none-match") === etag) {
-      return new NextResponse(null, {
-        status: 304,
-        headers: { ETag: etag, "Cache-Control": "private, max-age=604800, immutable" },
-      });
-    }
+		const etag = `W/"thumb-${Math.round(stats.mtimeMs).toString(16)}-${stats.size}-${width}"`;
+		if (request.headers.get("if-none-match") === etag) {
+			return new NextResponse(null, {
+				status: 304,
+				headers: {
+					ETag: etag,
+					"Cache-Control": "private, max-age=604800, immutable",
+				},
+			});
+		}
 
-    return new NextResponse(new Uint8Array(thumb.data), {
-      headers: {
-        "Content-Type": thumb.mime,
-        "Content-Length": String(thumb.data.byteLength),
-        "Cache-Control": "private, max-age=604800, immutable",
-        ETag: etag,
-      },
-    });
-  } catch (error) {
-    return errorResponse(error);
-  }
+		return new NextResponse(new Uint8Array(thumb.data), {
+			headers: {
+				"Content-Type": thumb.mime,
+				"Content-Length": String(thumb.data.byteLength),
+				"Cache-Control": "private, max-age=604800, immutable",
+				ETag: etag,
+			},
+		});
+	} catch (error) {
+		return errorResponse(error);
+	}
 }

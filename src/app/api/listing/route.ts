@@ -12,16 +12,16 @@ export const dynamic = "force-dynamic";
  * No `path` token means the default gallery folder.
  */
 export async function GET(request: Request) {
-  try {
-    ensureRootExists();
-    const url = new URL(request.url);
-    const token = url.searchParams.get("path");
-    const key: SortKey = url.searchParams.get("sort") === "date" ? "date" : "name";
-    const dir: SortDir = url.searchParams.get("dir") === "desc" ? "desc" : "asc";
+	try {
+		ensureRootExists();
+		const url = new URL(request.url);
+		const token = url.searchParams.get("path");
+		const key: SortKey = url.searchParams.get("sort") === "date" ? "date" : "name";
+		const dir: SortDir = url.searchParams.get("dir") === "desc" ? "desc" : "asc";
 
-    const listing = await buildListing(token, key, dir);
-    return NextResponse.json(listing, { headers: noStoreHeaders() });
-  } catch (error) {
-    return errorResponse(error);
-  }
+		const listing = await buildListing(token, key, dir);
+		return NextResponse.json(listing, { headers: noStoreHeaders() });
+	} catch (error) {
+		return errorResponse(error);
+	}
 }

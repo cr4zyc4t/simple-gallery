@@ -14,28 +14,28 @@ export const dynamic = "force-dynamic";
  * sub-folders of that directory.
  */
 export async function GET(request: Request) {
-  try {
-    ensureRootExists();
-    const url = new URL(request.url);
-    const token = url.searchParams.get("path");
+	try {
+		ensureRootExists();
+		const url = new URL(request.url);
+		const token = url.searchParams.get("path");
 
-    if (!token) {
-      const base = buildBrowseResponse(null);
-      return NextResponse.json(
-        { ...base, entries: [], readOnly: READ_ONLY },
-        { headers: noStoreHeaders() },
-      );
-    }
+		if (!token) {
+			const base = buildBrowseResponse(null);
+			return NextResponse.json(
+				{ ...base, entries: [], readOnly: READ_ONLY },
+				{ headers: noStoreHeaders() }
+			);
+		}
 
-    const dir = resolveToken(token);
-    if (!fs.statSync(dir).isDirectory()) throw new PathError("Not a folder", 400);
-    const base = buildBrowseResponse(dir);
-    const entries = await browseDir(dir);
-    return NextResponse.json(
-      { ...base, entries, readOnly: READ_ONLY },
-      { headers: noStoreHeaders() },
-    );
-  } catch (error) {
-    return errorResponse(error);
-  }
+		const dir = resolveToken(token);
+		if (!fs.statSync(dir).isDirectory()) throw new PathError("Not a folder", 400);
+		const base = buildBrowseResponse(dir);
+		const entries = await browseDir(dir);
+		return NextResponse.json(
+			{ ...base, entries, readOnly: READ_ONLY },
+			{ headers: noStoreHeaders() }
+		);
+	} catch (error) {
+		return errorResponse(error);
+	}
 }

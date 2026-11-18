@@ -9,26 +9,29 @@ import { DEFAULT_PREFS, prefsCookie, type Prefs } from "./prefs";
  * written straight back to the cookie for the next request.
  */
 export function usePrefs(initial: Prefs = DEFAULT_PREFS): [Prefs, (patch: Partial<Prefs>) => void] {
-  const [prefs, setPrefs] = useState<Prefs>(() => ({ ...DEFAULT_PREFS, ...initial }));
-  const seeded = useRef(false);
+	const [prefs, setPrefs] = useState<Prefs>(() => ({
+		...DEFAULT_PREFS,
+		...initial,
+	}));
+	const seeded = useRef(false);
 
-  useEffect(() => {
-    // No need to rewrite what the browser just sent us.
-    if (!seeded.current) {
-      seeded.current = true;
-      return;
-    }
-    try {
-      document.cookie = prefsCookie(prefs);
-    } catch {
-      // storage disabled — preferences simply do not survive the session
-    }
-  }, [prefs]);
+	useEffect(() => {
+		// No need to rewrite what the browser just sent us.
+		if (!seeded.current) {
+			seeded.current = true;
+			return;
+		}
+		try {
+			document.cookie = prefsCookie(prefs);
+		} catch {
+			// storage disabled — preferences simply do not survive the session
+		}
+	}, [prefs]);
 
-  const update = useCallback(
-    (patch: Partial<Prefs>) => setPrefs((current) => ({ ...current, ...patch })),
-    [],
-  );
+	const update = useCallback(
+		(patch: Partial<Prefs>) => setPrefs((current) => ({ ...current, ...patch })),
+		[]
+	);
 
-  return [prefs, update];
+	return [prefs, update];
 }
