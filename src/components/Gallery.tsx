@@ -958,6 +958,7 @@ export default function Gallery({
           onIndexChange={changeImage}
           onClose={closeImage}
           onRequestDelete={(entry) => void requestDelete(entry)}
+          dialogOpen={pending !== null}
         />
       ) : null}
 
@@ -968,6 +969,7 @@ export default function Gallery({
           deleting={deletingToken === playingEntry.token}
           onClose={closeVideoPlayer}
           onRequestDelete={(entry) => void requestDelete(entry)}
+          dialogOpen={pending !== null}
         />
       ) : null}
 

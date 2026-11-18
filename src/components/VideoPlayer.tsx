@@ -12,6 +12,8 @@ interface VideoPlayerProps {
   onClose: () => void;
   onRequestDelete: (entry: GalleryEntry) => void;
   deleting?: boolean;
+  /** A dialog is on top of the player: it owns Esc and Delete. */
+  dialogOpen?: boolean;
 }
 
 /**
@@ -26,6 +28,7 @@ export default function VideoPlayer({
   onClose,
   onRequestDelete,
   deleting = false,
+  dialogOpen = false,
 }: VideoPlayerProps) {
   const [failed, setFailed] = useState(false);
   const [started, setStarted] = useState(false);
@@ -42,6 +45,11 @@ export default function VideoPlayer({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // A confirm dialog on top of the player answers Esc and Delete first, so
+      // dismissing the delete prompt does not also close the player.
+      if (dialogOpen && (event.key === "Escape" || event.key === "Delete" || event.key === "Backspace")) {
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
@@ -52,7 +60,7 @@ export default function VideoPlayer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [entry, onClose, onRequestDelete, readOnly]);
+  }, [dialogOpen, entry, onClose, onRequestDelete, readOnly]);
 
   return (
     <div

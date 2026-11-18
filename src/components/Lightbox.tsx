@@ -22,6 +22,8 @@ interface LightboxProps {
   onClose: () => void;
   onRequestDelete: (entry: GalleryEntry) => void;
   deleting?: boolean;
+  /** A dialog is on top of the viewer: it owns Esc and Delete. */
+  dialogOpen?: boolean;
 }
 
 const SWIPE_THRESHOLD = 55;
@@ -48,6 +50,7 @@ export default function Lightbox({
   onClose,
   onRequestDelete,
   deleting = false,
+  dialogOpen = false,
 }: LightboxProps) {
   const count = images.length;
   const safeIndex = Math.min(Math.max(index, 0), Math.max(count - 1, 0));
@@ -173,6 +176,10 @@ export default function Lightbox({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // A confirm dialog on top of the viewer answers Esc and Delete first.
+      if (dialogOpen && (event.key === "Escape" || event.key === "Delete" || event.key === "Backspace")) {
+        return;
+      }
       switch (event.key) {
         case "Escape":
           event.preventDefault();
@@ -225,7 +232,7 @@ export default function Lightbox({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [count, current, go, onClose, onRequestDelete, readOnly, safeIndex, zoomAround]);
+  }, [count, current, dialogOpen, go, onClose, onRequestDelete, readOnly, safeIndex, zoomAround]);
 
   const beginPinch = () => {
     const [a, b] = [...pointers.current.values()];

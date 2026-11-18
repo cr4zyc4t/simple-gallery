@@ -92,39 +92,44 @@ function useLongPress(enabled: boolean, onLongPress: () => void) {
 }
 
 /**
- * Poster for a picture or a video. A video whose poster could not be generated
- * (no ffmpeg, undecodable stream) falls back to a video glyph instead of a
- * broken image.
+ * Thumbnail for a picture, a video or a folder cover. When the server cannot
+ * produce one — no ffmpeg for a video poster, an undecodable stream, an
+ * unreadable file — the caller's placeholder is drawn instead of a broken image.
  */
 function MediaThumb({
-  entry,
+  token,
+  alt,
   width,
-  iconSize,
+  placeholder,
   className,
 }: {
-  entry: GalleryEntry;
+  token: string;
+  alt: string;
   width: number;
-  iconSize: number;
+  placeholder: React.ReactNode;
   className: string;
 }) {
   const [broken, setBroken] = useState(false);
-  if (broken) {
-    return (
-      <span className={`grid place-items-center ${className}`}>
-        <VideoIcon className="text-ink-muted" width={iconSize} height={iconSize} />
-      </span>
-    );
-  }
+  if (broken) return <>{placeholder}</>;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={endpoints.thumb(entry.token, width)}
-      alt={entry.name}
+      src={endpoints.thumb(token, width)}
+      alt={alt}
       loading="lazy"
       decoding="async"
       onError={() => setBroken(true)}
       className={className}
     />
+  );
+}
+
+/** Stands in for a video whose poster could not be generated. */
+function VideoPlaceholder({ size }: { size: number }) {
+  return (
+    <span className="grid h-full w-full place-items-center">
+      <VideoIcon className="text-ink-muted" width={size} height={size} />
+    </span>
   );
 }
 
@@ -230,23 +235,23 @@ export default function EntryItem({
           <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-sunken ring-1 ring-line/50">
             {isFolder ? (
               entry.coverToken ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={endpoints.thumb(entry.coverToken, 128)}
+                <MediaThumb
+                  token={entry.coverToken}
                   alt=""
-                  loading="lazy"
-                  decoding="async"
+                  width={128}
                   className="h-full w-full object-cover opacity-80"
+                  placeholder={<FolderIcon className="text-accent" width={22} height={22} />}
                 />
               ) : (
                 <FolderIcon className="text-accent" width={22} height={22} />
               )
             ) : (
               <MediaThumb
-                entry={entry}
+                token={entry.token}
+                alt={entry.name}
                 width={128}
-                iconSize={22}
                 className="h-full w-full object-cover"
+                placeholder={<VideoPlaceholder size={22} />}
               />
             )}
           </span>
@@ -300,13 +305,13 @@ export default function EntryItem({
           {isFolder ? (
             <>
               {entry.coverToken ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={endpoints.thumb(entry.coverToken, 400)}
+                // The folder icon below already stands in for a cover that fails.
+                <MediaThumb
+                  token={entry.coverToken}
                   alt=""
-                  loading="lazy"
-                  decoding="async"
+                  width={400}
                   className="absolute inset-0 h-full w-full object-cover opacity-45 transition duration-300 group-hover:scale-[1.03]"
+                  placeholder={null}
                 />
               ) : null}
               <span className="absolute inset-0 grid place-items-center">
@@ -316,10 +321,11 @@ export default function EntryItem({
           ) : (
             <>
               <MediaThumb
-                entry={entry}
+                token={entry.token}
+                alt={entry.name}
                 width={400}
-                iconSize={40}
                 className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                placeholder={<VideoPlaceholder size={40} />}
               />
               {isVideo ? (
                 <span

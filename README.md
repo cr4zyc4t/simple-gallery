@@ -156,13 +156,16 @@ they are **not** a capability or a secret.
   the grid treats both identically. At most two decodes run at a time, a decode
   is killed after `GALLERY_FFMPEG_TIMEOUT_MS`, and a missing ffmpeg is noticed
   once instead of on every tile — the route then answers `501` and the tile draws
-  a video glyph instead of a broken image. This is also why a `.mkv` gets a
+  a video glyph instead of a broken image (a folder whose cover video fails that
+  way keeps its folder icon). This is also why a `.mkv` gets a
   poster even in a browser that cannot play it.
 * **Video player** — deliberately separate from the carousel: `VideoPlayer` shows
   one file with the browser's native controls, the cached WebP as `poster`, and
   the download link. No paging, no swipe, no zoom, so scrubbing, volume and
   fullscreen behave the way a video app should; `Esc` (or Back) closes it, and
-  `?i=` addresses a video exactly like it addresses a picture.
+  `?i=` addresses a video exactly like it addresses a picture. While a confirm
+  dialog is open on top of either viewer, that dialog owns `Esc` and `Delete` —
+  dismissing a delete prompt leaves the viewer open.
 * **Carousel** — one track, `translate3d` per page, pointer events with velocity
   detection; only the previous/current/next `<img>` are mounted, so a folder of
   500 photos stays light. Edge arrows are hidden below `sm` so they never eat a
