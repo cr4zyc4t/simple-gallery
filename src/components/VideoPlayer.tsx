@@ -70,7 +70,7 @@ export default function VideoPlayer({
       aria-label={`Video player, ${entry.name}`}
     >
       <header className="flex shrink-0 items-center gap-2 px-3 py-2 sm:px-4 sm:py-3">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/90 sm:text-base">
+        <span className="min-w-0 flex-1 break-words text-sm leading-snug font-medium text-white/90 sm:text-base">
           {entry.name}
         </span>
         {!readOnly ? (
@@ -156,9 +156,9 @@ export default function VideoPlayer({
       </div>
 
       <footer className="flex shrink-0 items-center gap-3 px-4 py-3 text-xs text-white/60 sm:py-4 sm:text-sm">
-        <span className="inline-flex shrink-0 items-center gap-1.5">
-          <VideoIcon width={16} height={16} />
-          <span className="truncate">{entry.name}</span>
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <VideoIcon width={16} height={16} className="shrink-0" />
+          <span className="break-words leading-snug">{entry.name}</span>
         </span>
         <span className="hidden shrink-0 sm:inline">{formatDate(entry.modifiedAt)}</span>
         <span className="shrink-0 tabular-nums">{formatBytes(entry.sizeBytes)}</span>

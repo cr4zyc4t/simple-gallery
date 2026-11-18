@@ -415,7 +415,7 @@ export default function Lightbox({
     >
       {/* Top bar */}
       <header className="flex shrink-0 items-center gap-2 px-3 py-2 sm:px-4 sm:py-3">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-white/90 sm:text-base">
+        <span className="min-w-0 flex-1 break-words text-sm leading-snug font-medium text-white/90 sm:text-base">
           {current.name}
         </span>
         <span className="hidden shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs tabular-nums text-white/70 sm:inline">
@@ -584,7 +584,7 @@ export default function Lightbox({
         <span className="shrink-0 tabular-nums sm:hidden">
           {safeIndex + 1} / {count}
         </span>
-        <span className="hidden min-w-0 flex-1 truncate sm:inline sm:flex-1">{current.name}</span>
+        <span className="hidden min-w-0 flex-1 break-words leading-snug sm:inline sm:flex-1">{current.name}</span>
         {zoomed ? (
           <button
             type="button"
