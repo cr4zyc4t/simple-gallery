@@ -421,10 +421,15 @@ export default function Gallery({
 		}
 	}, [writeUrl]);
 
-	/** Leaving a folder always drops the selection. */
-	useEffect(() => {
+	/** Leaving a folder always drops the selection, adjusted during render so the folder
+	 * being left never shows its selection inside the new one. */
+	const [lastFolder, setLastFolder] = useState(token);
+	if (token !== lastFolder) {
+		setLastFolder(token);
 		setSelected([]);
 		setSelectMode(false);
+	}
+	useEffect(() => {
 		selectionAnchor.current = null;
 	}, [token]);
 
@@ -709,6 +714,8 @@ export default function Gallery({
 	const previewEntry = previewIndex !== null ? images[previewIndex] : undefined;
 	useEffect(() => {
 		if (previewIndex === null || previewEntry) return;
+		// `?i=` may point at a picture the current listing no longer holds; closing the
+		// viewer also writes history/URL, so it stays a side effect rather than render logic.
 		closeImage();
 	}, [closeImage, previewEntry, previewIndex]);
 
@@ -720,6 +727,8 @@ export default function Gallery({
 			: null;
 	useEffect(() => {
 		if (!playingToken || playingEntry) return;
+		// Same as the viewer above: the clip can disappear from the listing, and closing
+		// the player touches history/URL, so this stays a side effect.
 		closeVideoPlayer();
 	}, [closeVideoPlayer, playingEntry, playingToken]);
 

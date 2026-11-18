@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
 	ChevronLeftIcon,
 	ChevronRightIcon,
@@ -62,6 +62,13 @@ export default function Lightbox({
 	const [gesturing, setGesturing] = useState(false);
 	const [loaded, setLoaded] = useState<Record<string, boolean>>({});
 	const [failed, setFailed] = useState<Record<string, boolean>>({});
+	// Reset zoom when the picture changes, adjusted during render so a new picture never
+	// paints at the previous scale (https://react.dev/learn/you-might-not-need-an-effect).
+	const [lastIndex, setLastIndex] = useState(safeIndex);
+	if (safeIndex !== lastIndex) {
+		setLastIndex(safeIndex);
+		setView(IDENTITY);
+	}
 	const pointer = useRef<{
 		id: number;
 		x: number;
@@ -88,11 +95,15 @@ export default function Lightbox({
 	const trackRef = useRef<HTMLDivElement>(null);
 	const closeRef = useRef<HTMLButtonElement>(null);
 
-	const viewRef = useRef(view);
-	viewRef.current = view;
 	const zoomed = view.scale > 1.01;
+	const viewRef = useRef(view);
 	const zoomedRef = useRef(zoomed);
-	zoomedRef.current = zoomed;
+	// Kept in sync on commit instead of during render: React can render a pass and
+	// throw it away, and every reader below is an event handler that runs after commit.
+	useLayoutEffect(() => {
+		viewRef.current = view;
+		zoomedRef.current = zoomed;
+	}, [view, zoomed]);
 
 	const visibleWindow = useMemo(() => {
 		const set = new Set<number>();
@@ -160,11 +171,6 @@ export default function Lightbox({
 		},
 		[zoomAround]
 	);
-
-	// Reset zoom when the picture changes or the viewer closes.
-	useEffect(() => {
-		setView(IDENTITY);
-	}, [safeIndex]);
 
 	useEffect(() => {
 		closeRef.current?.focus();

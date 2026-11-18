@@ -23,12 +23,21 @@ type Tab = "browse" | "path";
 
 export default function AddFolderDialog({ open, onClose, onAdded }: AddFolderDialogProps) {
 	const [tab, setTab] = useState<Tab>("browse");
-	const [token, setToken] = useState<string | null>(null);
 	const [data, setData] = useState<BrowseResponse | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [typedPath, setTypedPath] = useState("");
+	// Opening the dialog always starts from the browse tab, adjusted during render so the
+	// previous visit is never shown first (https://react.dev/learn/you-might-not-need-an-effect).
+	const [wasOpen, setWasOpen] = useState(open);
+	if (open !== wasOpen) {
+		setWasOpen(open);
+		if (open) {
+			setTab("browse");
+			setTypedPath("");
+		}
+	}
 
 	const load = useCallback(async (nextToken: string | null) => {
 		setLoading(true);
@@ -36,7 +45,6 @@ export default function AddFolderDialog({ open, onClose, onAdded }: AddFolderDia
 		try {
 			const response = await fetchBrowse(nextToken);
 			setData(response);
-			setToken(nextToken);
 		} catch (requestError) {
 			setError(requestError instanceof Error ? requestError.message : "Could not read this folder");
 		} finally {
@@ -46,8 +54,8 @@ export default function AddFolderDialog({ open, onClose, onAdded }: AddFolderDia
 
 	useEffect(() => {
 		if (!open) return;
-		setTab("browse");
-		setTypedPath("");
+		// Fetching the root listing is an external system; load()'s setState is the
+		// loading flag for that request, so the effect is the right place for it.
 		void load(null);
 	}, [open, load]);
 
